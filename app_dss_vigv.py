@@ -1,0 +1,635 @@
+import math
+import numpy as np
+import pandas as pd
+import requests
+import streamlit as st
+
+# ==============================================================================
+# 1. KONFIGURASI HALAMAN STREAMLIT
+# ==============================================================================
+st.set_page_config(
+    page_title="DECISION SUPPORT SYSTEM GT BLOK 1-2 UBP PRIOK",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# Custom CSS Styling
+st.markdown(
+    """
+    <style>
+    .main-header { font-size: 24px; font-weight: bold; color: #1E3A8A; text-align: center; }
+    .sub-header { font-size: 13px; color: #4B5563; text-align: center; margin-bottom: 20px; }
+    .card-safe { background-color: #F0FDF4; border-left: 6px solid #16A34A; padding: 12px; border-radius: 8px; }
+    .card-warn { background-color: #FEFCE8; border-left: 6px solid #CA8A04; padding: 12px; border-radius: 8px; }
+    .card-danger { background-color: #FEF2F2; border-left: 6px solid #DC2626; padding: 12px; border-radius: 8px; }
+    .weather-card { background-color: #EFF6FF; border: 1px solid #BFDBFE; padding: 12px; border-radius: 8px; }
+    </style>
+""",
+    unsafe_allow_html=True,
+)
+
+st.markdown(
+    '<div class="main-header">DSS OPTIMIZATION GT BLOK 1-2 UBP PRIOK</div>',
+    unsafe_allow_html=True,
+)
+st.markdown(
+    '<div class="sub-header">System Decision Support Optimization VIGV Trim,'
+    ' Psychrometric Weather Telemetry & Air Intake Health Index</div>',
+    unsafe_allow_html=True,
+)
+
+# ==============================================================================
+# 2. INTEGRASI API CUACA OPEN-METEO & FISIKA UDARA BASAH (PLTGU PRIOK)
+# ==============================================================================
+PRIOK_LAT = -6.1044
+PRIOK_LON = 106.8778
+
+
+@st.cache_data(ttl=600)
+def fetch_priok_weather_api():
+  """Mengambil data cuaca real-time & prediksi dari Open-Meteo API khusus lokasi PLTGU Priok."""
+  try:
+    url = (
+        f'https://api.open-meteo.com/v1/forecast?latitude={PRIOK_LAT}&longitude={PRIOK_LON}&current=temperature_2m,relative_humidity_2m,surface_pressure&hourly=temperature_2m,relative_humidity_2m,surface_pressure&timezone=Asia%2FJakarta'
+    )
+    response = requests.get(url, timeout=5)
+    if response.status_code == 200:
+      return response.json()
+  except Exception:
+    return None
+  return None
+
+
+def calculate_moist_air_density(temp_c, rh_pct, press_mbar):
+  """Kalkulasi Kerapatan Udara Basah (Moist Air Density - kg/m³)
+
+  Menggunakan Persamaan Magnus untuk Tekanan Uap Jenuh dan Hukum Gas Ideal Udara
+  Lembap.
+  """
+  if temp_c is None or rh_pct is None or press_mbar is None:
+    return 1.165, 15.0
+
+  # Tekanan Uap Jenuh (P_sat) dalam hPa (mbar)
+  p_sat = 6.1078 * math.pow(10, (7.5 * temp_c) / (237.3 + temp_c))
+  # Tekanan Uap Air Parsial (P_v)
+  p_v = (rh_pct / 100.0) * p_sat
+  # Tekanan Udara Kering (P_d)
+  p_d = press_mbar - p_v
+
+  # Temperatur Mutlak (Kelvin)
+  t_k = temp_c + 273.15
+
+  # Konstanta Gas Udara Kering (r_d) dan Uap Air (r_v)
+  r_d = 287.058
+  r_v = 461.495
+
+  # Konversi mbar/hPa ke Pascal (x100)
+  rho_d = (p_d * 100.0) / (r_d * t_k)
+  rho_v = (p_v * 100.0) / (r_v * t_k)
+
+  rho_moist = rho_d + rho_v
+  return round(rho_moist, 4), round(p_v, 2)
+
+
+# Ambil Data API Cuaca
+weather_json = fetch_priok_weather_api()
+api_available = weather_json is not None
+
+if api_available:
+  curr_weather = weather_json.get('current', {})
+  live_temp = curr_weather.get('temperature_2m', 31.5)
+  live_rh = curr_weather.get('relative_humidity_2m', 78.0)
+  live_press = curr_weather.get('surface_pressure', 1011.0)
+else:
+  live_temp, live_rh, live_press = 31.5, 78.0, 1011.0
+
+# ==============================================================================
+# 3. SIDEBAR - CONFIG & DATA BBM (SATUAN DCS: kscm/h & cbm/h)
+# ==============================================================================
+st.sidebar.header('Parameter Pembangkit')
+selected_unit = st.sidebar.selectbox(
+    'Pilih Unit Turbin Gas:',
+    ['GT 1.1', 'GT 1.2', 'GT 1.3', 'GT 2.1', 'GT 2.2', 'GT 2.3'],
+)
+
+fuel_mode = st.sidebar.radio(
+    'Mode Bahan Bakar :',
+    ('Gas Alam (Natural Gas)', 'HSD (High Speed Diesel / Solar)'),
+)
+
+st.sidebar.markdown('---')
+st.sidebar.header('🌐 Telemetri Stasiun Cuaca')
+use_live_api = st.sidebar.toggle(
+    'Gunakan Live API Cuaca Tanjung Priok', value=api_available
+)
+
+if use_live_api and api_available:
+  st.sidebar.success(
+      f'🟢 API Terhubung (Lat: {PRIOK_LAT}, Lon: {PRIOK_LON})'
+  )
+  input_temp_amb = live_temp
+  input_rh_amb = live_rh
+  input_pamb_mbar = live_press
+else:
+  if not api_available and use_live_api:
+    st.sidebar.warning('⚠️ Gagal koneksi API. Menggunakan Mode Manual.')
+  input_temp_amb = st.sidebar.number_input(
+      'Temp Ambeien Manual (°C):', value=31.5, step=0.1
+  )
+  input_rh_amb = st.sidebar.number_input(
+      'Kelembapan Relative RH Manual (%):', value=78.0, step=1.0
+  )
+  input_pamb_mbar = st.sidebar.number_input(
+      'Ambient Press Manual (mbar):', value=1011.0, step=1.0
+  )
+
+weather_condition = st.sidebar.selectbox(
+    'Kondisi Cuaca Lapangan:',
+    ['Cerah / Normal', 'Mendung / Gerimis', 'Hujan Deras (Extreme Drop)'],
+)
+
+# Penyesuaian Satuan DCS dan Konstanta Perhitungan Baseline
+if fuel_mode == 'Gas Alam (Natural Gas)':
+  lhv_fuel = 8800.0 * 1000.0  # kkal / kscm (8.800.000 kkal/kscm)
+  co2_factor = 1.98 * 1000.0  # kg CO2 / kscm
+  price_per_unit = 4025.0 * 1000.0  # Rp / kscm
+  fuel_unit = 'kscm/h'
+  fuel_short = 'Gas Alam'
+  base_saving_rate = 0.247  # kscm/h (setara 247 Nm3/h pada trim +1.4°)
+  default_fuel_cons = 35.30  # kscm/h
+else:
+  lhv_fuel = 8600.0 * 1000.0  # kkal / cbm (8.600.000 kkal/cbm)
+  co2_factor = 2.68 * 1000.0  # kg CO2 / cbm
+  price_per_unit = 13500.0 * 1000.0  # Rp / cbm
+  fuel_unit = 'cbm/h'
+  fuel_short = 'HSD (Solar)'
+  base_saving_rate = 0.220  # cbm/h (setara 220 Liter/h pada trim +1.4°)
+  default_fuel_cons = 31.20  # cbm/h
+
+# Hitung Kerapatan Udara Basah Real-Time
+moist_density, vapor_press = calculate_moist_air_density(
+    input_temp_amb, input_rh_amb, input_pamb_mbar
+)
+
+
+# ==============================================================================
+# 4. FUNGSI LOGIKA KALKULASI PSIKROMETRIK VIGV TRIM 2-ARAH (PROPORSIONAL DINAMIS)
+# ==============================================================================
+def calculate_vigv_trim(
+    t_intake, load_mw, act_vigv=62.7, rho_moist=1.165, mode_simulasi=False
+):
+  """Kalkulasi VIGV Trim Otomatis 2-Arah Berbasis Koreksi Proporsional Dinamis.
+
+  Aman, Responsif, dan Sesuai Limit Safety DCS (±2.0°).
+  """
+  if load_mw <= 0:
+    return 0.0, 0.0, 0.0, 0.0, "UNIT OFFLINE"
+
+  if mode_simulasi:
+    # Mode Perencanaan Shift (Simulasi sederhana berbasis kompensasi suhu + RH)
+    base_trim_temp = (t_intake - 20.0) * 0.1
+    rho_iso = 1.2041
+    density_corr = (
+        max((rho_iso - rho_moist) / rho_iso, 0.0) * 0.8
+        if rho_moist < rho_iso
+        else 0.0
+    )
+    trim_target = float(np.clip(base_trim_temp + density_corr, 0.2, 2.0))
+    status_msg = "NORMAL ADVISORY"
+  else:
+    # Mode Live Verification DCS (Koreksi Proporsional Dinamis P-Controller)
+    base_ideal_angle = 45.0 + (load_mw / 120.0) * 20.0  # Kurva ideal GT13E1
+    rho_iso = 1.2041
+    density_corr = max((rho_iso - rho_moist) / rho_iso, 0.0) * 0.8
+    temp_corr = (t_intake - 20.0) * 0.1
+
+    # Target Angle Ideal Termodinamika
+    target_angle_ideal = base_ideal_angle + temp_corr + density_corr
+
+    # Hitung Deviasi Selisih Angle (Target Ideal vs Actual DCS)
+    delta_angle = target_angle_ideal - act_vigv
+
+    # Gain Proporsional (Kp = 0.6) agar respon terasa lebih peka & proporsional
+    trim_calc = delta_angle * 0.6
+
+    # Clamping Guardrail Safety (-2.0° s.d. +2.0°)
+    trim_target = float(np.clip(trim_calc, -2.0, 2.0))
+
+    # Tentukan Status Koreksi Operasional
+    if trim_target > 0.1:
+      status_msg = "UNDER-OPENED (Tercekik) ➔ Rekomendasi Trim NAIK (+)"
+    elif trim_target < -0.1:
+      status_msg = "OVER-OPENED (Kelebihan) ➔ Rekomendasi Trim TURUN (-)"
+    else:
+      status_msg = "OPTIMAL ➔ Bukaan Sudut Sudah Pas"
+
+  # Kalkulasi Laju Hemat BBM & CO2
+  fuel_saved_h = base_saving_rate * (abs(trim_target) / 2.0)
+  fin_saved_h = fuel_saved_h * price_per_unit
+  co2_red_h = fuel_saved_h * co2_factor
+
+  return (
+      round(trim_target, 2),
+      round(fuel_saved_h, 3),
+      round(fin_saved_h, 0),
+      round(co2_red_h, 1),
+      status_msg,
+  )
+
+
+def predict_intake_temp(t_ambient_base, hour_slot):
+  if "10:00" in hour_slot:
+    return round(t_ambient_base + 1.8, 1)
+  elif "17:00" in hour_slot:
+    return round(t_ambient_base + 1.2, 1)
+  elif "00:00" in hour_slot:
+    return round(t_ambient_base + 0.3, 1)
+  return round(t_ambient_base + 1.0, 1)
+
+
+# ==============================================================================
+# 5. TABS DASHBOARD
+# ==============================================================================
+tab1, tab2, tab3 = st.tabs([
+    "1. Live Weather API & Prediksi Shift (10:00, 17:00, 00:00)",
+    "2. Live Verification & DCS Interlock",
+    "3. Manfaat & Prediksi Filter RUL",
+])
+
+# ------------------------------------------------------------------------------
+# TAB 1: PREDIKSI 3 SHIFT & LIVE TELEMETRI CUACA
+# ------------------------------------------------------------------------------
+with tab1:
+  st.subheader("🌐 Monitoring Live Telemetri Cuaca & Prediksi VIGV Trim")
+
+  # Banner Telemetri Live Cuaca PLTGU Priok
+  st.markdown('<div class="weather-card">', unsafe_allow_html=True)
+  wc1, wc2, wc3, wc4 = st.columns(4)
+  wc1.metric(
+      "Suhu Ambeien (Tamb)",
+      f"{input_temp_amb:.1f} °C",
+      delta="Live API Open-Meteo" if use_live_api else "Manual",
+  )
+  wc2.metric(
+      "Kelembapan Relatif (RH)",
+      f"{input_rh_amb:.0f} %",
+      delta=f"Uap Air: {vapor_press} hPa",
+  )
+  wc3.metric("Tekanan Udara (Pamb)", f"{input_pamb_mbar:.1f} mbar")
+
+  # ISO Standard Density vs Actual Moist Density
+  iso_density = 1.2041  # kg/m3 pada 20C ISO
+  density_diff_pct = ((moist_density - iso_density) / iso_density) * 100.0
+  wc4.metric(
+      "Kerapatan Udara Basah (ρ)",
+      f"{moist_density:.4f} kg/m³",
+      delta=f"{density_diff_pct:.2f}% vs ISO Standard",
+  )
+  st.markdown("</div>", unsafe_allow_html=True)
+
+  st.markdown("---")
+  st.subheader("Perencanaan Harian VIGV Trim (3 Jam Transisi Utama Shift)")
+  col1, col2 = st.columns(2)
+  t_amb_input = col1.number_input(
+      "Prakiraan Suhu Ambeien Luar (°C)",
+      value=float(input_temp_amb),
+      step=0.5,
+  )
+  load_mw_plan = col2.number_input(
+      "Rencana Set Point Beban (MW)", value=104.0, step=1.0
+  )
+
+  slots = ["10:00 WIB (Pagi)", "17:00 WIB (Siang)", "00:00 WIB (Malam)"]
+  cols_slot = st.columns(3)
+
+  for idx, slot_name in enumerate(slots):
+    with cols_slot[idx]:
+      if weather_condition == "Hujan Deras (Extreme Drop)":
+        t_pred = 24.5
+      else:
+        base_adj = t_amb_input + (
+            1.5 if idx == 0 else (0.5 if idx == 1 else -2.0)
+        )
+        t_pred = predict_intake_temp(base_adj, slot_name)
+
+      # Kalkulasi kerapatan udara basah untuk slot prediksi
+      rho_slot, _ = calculate_moist_air_density(
+          t_pred, input_rh_amb, input_pamb_mbar
+      )
+      trim_p, f_sav_p, rp_sav_p, co2_p, _ = calculate_vigv_trim(
+          t_pred, load_mw_plan, rho_moist=rho_slot, mode_simulasi=True
+      )
+
+      st.markdown(f"### 🕒 Slot {slot_name.split()[0]}")
+      st.metric("Prediksi Temp Intake", f"{t_pred} °C")
+      st.metric("Rekomendasi VIGV Trim", f"+{trim_p:.2f} °")
+      st.caption(
+          f"Est. Hemat: {f_sav_p:.3f} {fuel_unit} (Rp {rp_sav_p:,.0f}/jam)"
+      )
+
+  # Tabel Forecast Jam-jaman Jika API Aktif
+  if api_available and use_live_api:
+    st.markdown("---")
+    st.subheader(
+        "📊 Tabel Prediksi Cuaca Jam-Jaman PLTGU Priok (6 Jam Ke Depan)"
+    )
+    hourly_data = weather_json.get("hourly", {})
+    df_hourly = pd.DataFrame({
+        "Waktu": hourly_data.get("time", [])[:6],
+        "Temp_Ambeien_°C": hourly_data.get("temperature_2m", [])[:6],
+        "Humidity_RH_%": hourly_data.get("relative_humidity_2m", [])[:6],
+        "Pressure_mbar": hourly_data.get("surface_pressure", [])[:6],
+    })
+
+    # Mengkalkulasi VIGV Trim Psikrometrik untuk Setiap Jam Forecast
+    df_hourly["Est_Temp_Intake_°C"] = df_hourly["Temp_Ambeien_°C"] + 1.2
+
+    def get_trim_from_row(row):
+      rho_row, _ = calculate_moist_air_density(
+          row["Temp_Ambeien_°C"], row["Humidity_RH_%"], row["Pressure_mbar"]
+      )
+      return calculate_vigv_trim(
+          row["Est_Temp_Intake_°C"],
+          load_mw_plan,
+          rho_moist=rho_row,
+          mode_simulasi=True,
+      )[0]
+
+    df_hourly["Target_VIGV_Trim_°"] = df_hourly.apply(
+        get_trim_from_row, axis=1
+    )
+    st.dataframe(df_hourly, use_container_width=True)
+
+# ------------------------------------------------------------------------------
+# TAB 2: LIVE VERIFICATION & DCS SAFETY
+# ------------------------------------------------------------------------------
+with tab2:
+  st.subheader("DCS Inputs & Protective Limit Monitor")
+
+  col_d1, col_d2, col_d3 = st.columns([1.2, 1.2, 1.6])
+
+  with col_d1:
+    st.markdown("**1. Parameter Beban & Operasi GT (DCS):**")
+    dcs_set_point_load = st.number_input(
+        "Set Point Load (MW)", value=104.0, step=0.5
+    )
+    dcs_act_vigv = st.number_input(
+        "Actual VIGV Angle Saat Ini (°)", value=62.7, step=0.1
+    )
+    dcs_fuel_cons = st.number_input(
+        f"Fuel Consumption DCS ({fuel_unit})",
+        value=default_fuel_cons,
+        step=0.1,
+        format="%.2f",
+    )
+    dcs_tat = st.number_input(
+        "Exhaust Temp / TAT (°C)", value=498.0, step=0.1
+    )
+    dcs_tit = st.number_input(
+        "Turbine Inlet Temp / TIT (°C)", value=1050.0, step=1.0
+    )
+
+  with col_d2:
+    st.markdown("**2. Parameter Tekanan & Lingkungan DCS:**")
+    dcs_temp_intake = st.number_input(
+        "Temp Intake DCS (°C)", value=round(input_temp_amb + 1.2, 1), step=0.1
+    )
+    dcs_pcd = st.number_input(
+        "Comp Discharge Press / Pcd (bar)", value=11.2, step=0.1
+    )
+    dcs_pamb_mbar = st.number_input(
+        "Ambient Pressure / Pamb (mbar)",
+        value=float(input_pamb_mbar),
+        step=1.0,
+    )
+    dcs_rh_pct = st.number_input(
+        "Ambient Humidity / RH (%)", value=float(input_rh_amb), step=1.0
+    )
+
+  # Hitung Kerapatan Udara Basah Live DCS
+  rho_live_dcs, _ = calculate_moist_air_density(
+      dcs_temp_intake, dcs_rh_pct, dcs_pamb_mbar
+  )
+
+  # Hitung Rekomendasi Trim Psikrometrik 2-Arah Proporsional & Prediksi Parameter
+  trim_live, f_sav_live, rp_sav_live, co2_live, status_msg_live = (
+      calculate_vigv_trim(
+          dcs_temp_intake,
+          dcs_set_point_load,
+          act_vigv=dcs_act_vigv,
+          rho_moist=rho_live_dcs,
+          mode_simulasi=False,
+      )
+  )
+  target_vigv_live = dcs_act_vigv + trim_live
+
+  tat_drop_pred = 2.5 * (trim_live / 2.0)
+  tit_drop_pred = 4.0 * (trim_live / 2.0)
+  pred_tat_after = dcs_tat - tat_drop_pred
+  pred_tit_after = dcs_tit - tit_drop_pred
+
+  with col_d3:
+    # Styling kartu rekomendasi berdasarkan trim positif atau negatif
+    card_style = "card-safe" if trim_live >= 0 else "card-warn"
+    st.markdown(f'<div class="{card_style}">', unsafe_allow_html=True)
+    st.markdown("**💡 REKOMENDASI INPUT HMI DCS:**")
+
+    trim_sign = "+" if trim_live > 0 else ""
+    st.markdown(
+        f'<h2 style="color: #1E3A8A; margin:0;">Target Bias:'
+        f' {trim_sign}{trim_live:.2f}°</h2>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(f"**Status Evaluasi:** `{status_msg_live}`")
+    st.markdown(
+        f"**Target Bukaan VIGV Akhir:** `{target_vigv_live:.2f}°` *(Saat Ini:"
+        f" {dcs_act_vigv:.1f}°)*"
+    )
+    st.markdown("---")
+    st.markdown("**📈 PREDIKSI PARAMETER PASCA-TRIM (AFTER):**")
+    st.markdown(
+        f"• **Prediksi TAT After Trim:** `{pred_tat_after:.1f} °C` *(Estimasi"
+        f" Perubahan: {-tat_drop_pred:+.1f}°C)*"
+    )
+    st.markdown(
+        f"• **Prediksi TIT After Trim:** `{pred_tit_after:.1f} °C` *(Estimasi"
+        f" Perubahan: {-tit_drop_pred:+.1f}°C)*"
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
+
+  st.markdown("---")
+  st.subheader("Batas Keamanan Gas Turbine Real-Time")
+
+  e_col1, e_col2, e_col3, e_col4 = st.columns(4)
+
+  with e_col1:
+    st.markdown("**Status VIGV Angle**")
+    if target_vigv_live < 45.0:
+      st.error(f"🚨 **TRIP CRITICAL!** VIGV < 45° ({target_vigv_live:.1f}°)")
+    elif dcs_set_point_load <= 70.0 and (47.0 <= target_vigv_live <= 48.0):
+      st.info(f"ℹ️ Standby Mode (0-70 MW): VIGV {target_vigv_live:.1f}°")
+    elif dcs_set_point_load > 120.0 and target_vigv_live >= 72.0:
+      st.warning("⚠️ Base Load (>120 MW): Max Limit 72° REACHED")
+    else:
+      st.success(f"✅ Normal Angle: {target_vigv_live:.1f}° (Safe)")
+
+  with e_col2:
+    st.markdown("**Status TAT Exhaust**")
+    if dcs_tat >= 575.0:
+      st.error(f"🚨 **TRIP TAT!** ({dcs_tat:.1f}°C ≥ 575°C)")
+    elif dcs_tat >= 565.0:
+      st.warning(f"⚠️ **ALARM TAT!** ({dcs_tat:.1f}°C ≥ 565°C)")
+    else:
+      st.success(f"✅ Safe Margin: +{575.0 - pred_tat_after:.1f}°C to Trip")
+
+  with e_col3:
+    st.markdown("**Status TIT Inlet**")
+    if dcs_tit >= 1130.0:
+      st.error(f"🚨 **TRIP TIT!** ({dcs_tit:.1f}°C ≥ 1130°C)")
+    elif dcs_tit >= 1120.0:
+      st.warning(f"⚠️ **ALARM TIT!** ({dcs_tit:.1f}°C ≥ 1120°C)")
+    else:
+      st.success(f"✅ Safe Margin: +{1130.0 - pred_tit_after:.1f}°C to Trip")
+
+  with e_col4:
+    st.markdown("**Status Press Discharge Compressor**")
+    if dcs_pcd >= 13.5:
+      st.warning(f"⚠️ **ALARM SURGE Pcd!** ({dcs_pcd:.1f} bar ≥ 13.5 bar)")
+    else:
+      st.success(f"✅ Pcd Normal ({dcs_pcd:.1f} bar)")
+
+# ------------------------------------------------------------------------------
+# TAB 3: MANFAAT & PREDIKSI OPERASIONAL
+# ------------------------------------------------------------------------------
+with tab3:
+  st.subheader(f"Ringkasan Manfaat & Prediksi ({fuel_mode})")
+
+  dcs_pamb_bar = dcs_pamb_mbar / 1000.0
+
+  # --------------------------------------------------------------------------
+  # MODEL VIRTUAL SENSOR & PREDIKSI RUL FILTER AIR INTAKE
+  # --------------------------------------------------------------------------
+  pcd_expected_clean = (dcs_pamb_bar * 11.15) * (
+      dcs_set_point_load / 104.0
+  ) ** 0.1
+  pcd_deficit = max(pcd_expected_clean - dcs_pcd, 0.0)
+
+  virtual_dp_filter_bar = 0.006 + (pcd_deficit * 0.02)
+  virtual_dp_mbar = virtual_dp_filter_bar * 1000.0
+
+  dp_warning_limit_bar = 0.015  # 15 mbar
+  dp_replace_limit_bar = 0.019  # 19 mbar
+
+  rate_dp_per_day_bar = 0.00007 if dcs_temp_intake >= 26.0 else 0.00012
+  margin_to_replace_bar = max(
+      dp_replace_limit_bar - virtual_dp_filter_bar, 0.0
+  )
+  estimated_rul_days = int(margin_to_replace_bar / rate_dp_per_day_bar)
+
+  # --------------------------------------------------------------------------
+  # PERHITUNGAN REVISI HEAT RATE & METRIK OPERASIONAL
+  # --------------------------------------------------------------------------
+  estimated_fuel_cons_after_trim = max(dcs_fuel_cons - f_sav_live, 0.0)
+  total_energy_saved_kkal = f_sav_live * lhv_fuel
+
+  if dcs_set_point_load > 0:
+    heat_rate_gain_kkal = total_energy_saved_kkal / (
+        dcs_set_point_load * 1000.0
+    )
+  else:
+    heat_rate_gain_kkal = 0.0
+
+  heat_rate_gain_kj = heat_rate_gain_kkal * 4.184
+
+  p_in_virtual = dcs_pamb_bar - virtual_dp_filter_bar
+  r_p = dcs_pcd / p_in_virtual
+  t_in_k = dcs_temp_intake + 273.15
+  eta_c_base = (
+      (t_in_k * (r_p**0.286 - 1)) / (dcs_tat + 273.15 - t_in_k) * 100
+  )
+  eta_c_gain = 0.65 if abs(trim_live) > 0 else 0.0
+  eta_c_final = min(eta_c_base + eta_c_gain, 88.5)
+
+  sfc_actual = (
+      (dcs_fuel_cons / dcs_set_point_load) if dcs_set_point_load > 0 else 0.0
+  )
+  sfc_saving = (
+      (f_sav_live / dcs_set_point_load) if dcs_set_point_load > 0 else 0.0
+  )
+
+  # 1. MANFAAT FINANSIAL & REDUKSI EMISI
+  st.markdown("### 1. Dampak Hemat Bahan Bakar & Dekarbonisasi")
+  m1, m2, m3, m4 = st.columns(4)
+
+  m1.metric(
+      "Est. Konsumsi BB After Trim",
+      f"{estimated_fuel_cons_after_trim:.2f} {fuel_unit}",
+      delta=f"-{f_sav_live:.3f} {fuel_unit}",
+  )
+  m2.metric(
+      "Laju Penghematan BB / Jam",
+      f"{f_sav_live:.3f} {fuel_unit}",
+      delta=f"-{sfc_saving:.4f} {fuel_unit}/MWh",
+  )
+  m3.metric("Penghematan Finansial / Jam", f"Rp {rp_sav_live:,.0f}")
+  m4.metric("Reduksi Emisi CO2 / Jam", f"{co2_live:.1f} kg CO2/jam")
+
+  st.markdown("---")
+
+  # 2. PREDIKSI FILTER AIR INTAKE & RUL
+  st.markdown(
+      "### 2. Status Tingkat Kekotoran & Prediksi Penggantian Filter Air Intake"
+  )
+
+  f_col1, f_col2, f_col3 = st.columns(3)
+
+  f_col1.metric(
+      "Virtual Estimasi Beda Tekanan (DP)",
+      f"{virtual_dp_filter_bar:.3f} bar",
+      delta=f"{virtual_dp_mbar:.1f} mbar (Soft-Sensor)",
+  )
+
+  f_col2.metric(
+      "Prediksi Sisa Umur Pakai (RUL)",
+      f"{estimated_rul_days} Hari Lagi",
+      delta="Condition-Based Maintenance",
+  )
+
+  with f_col3:
+    st.markdown("**Evaluasi & Rekomendasi Pemeliharaan:**")
+    if virtual_dp_filter_bar >= dp_replace_limit_bar:
+      st.error(
+          "🚨 **CRITICAL REPLACE!** Estimated DP ≥ 0,019 bar"
+          f" ({virtual_dp_mbar:.1f} mbar). Filter kotor, jadwalkan penggantian"
+          " segera!"
+      )
+    elif virtual_dp_filter_bar >= dp_warning_limit_bar:
+      st.warning(
+          "⚠️ **WARNING:** Estimated DP ≥ 0,015 bar"
+          f" ({virtual_dp_mbar:.1f} mbar). Penumpukan debu meningkat, siapkan"
+          " stok filter."
+      )
+    else:
+      st.success(
+          "🟢 **FILTER CLEAN:** Estimated DP < 0,015 bar"
+          f" ({virtual_dp_mbar:.1f} mbar). Kondisi aliran intake bersih &"
+          " optimal."
+      )
+
+  st.markdown("---")
+
+  # 3. BAGIAN PERFORMA TERMAL KOMPRESOR
+  st.markdown("### 3. Performa Termal & Efisiensi Kompresor GT")
+  e1, e2, e3 = st.columns(3)
+  e1.metric("Specific Fuel Cons (SFC)", f"{sfc_actual:.4f} {fuel_unit}/MWh")
+
+  e2.metric(
+      "Perbaikan Heat Rate (ΔHR)",
+      f"-{heat_rate_gain_kkal:.2f} kkal/kWh",
+      delta=f"-{heat_rate_gain_kj:.2f} kJ/kWh",
+  )
+  e3.metric(
+      "Efisiensi Isentropik (ηc)",
+      f"{eta_c_final:.2f} %",
+      delta=f"+{eta_c_gain:.2f} %",
+  )
