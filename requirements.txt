@@ -5,3 +5,6 @@ requests
 openpyxl
 reportlab
 plotly
+joblib
+prophet
+scikit-learn
