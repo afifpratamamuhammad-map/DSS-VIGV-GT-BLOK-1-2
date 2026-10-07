@@ -26,20 +26,57 @@ def predict_weather_24h_prophet(m_temp, m_rh):
   if m_temp is None or m_rh is None:
     return None
 
-  # 1. Buat rentang waktu 24 jam ke depan mulai dari HARI INI saat aplikasi dibuka
+  # 1. Tentukan rentang jam untuk 24 jam ke depan berbasis Waktu Sekarang
   now = pd.Timestamp.now().floor('h')
   future_dates = pd.date_range(start=now, periods=24, freq='h')
 
-  future_df = pd.DataFrame({'ds': future_dates})
+  # 2. Ambil pola musiman harian saja dari Prophet (mencakup jam 00:00 - 23:00)
+  # Menggunakan sampel tanggal baseline agar trend masa depan tidak mempengaruhi nilai
+  base_dates = pd.date_range(
+      start='2023-06-01 00:00:00', periods=24, freq='h'
+  )
+  df_base = pd.DataFrame({'ds': base_dates})
 
-  # 2. Lakukan prediksi berdasarkan pola musiman yang dipelajari Prophet
-  forecast_temp = m_temp.predict(future_df)
-  forecast_rh = m_rh.predict(future_df)
+  pred_temp_base = m_temp.predict(df_base)
+  pred_rh_base = m_rh.predict(df_base)
+
+  # Ambil variasi fluktuasi (delta) dari rata-rata harian
+  temp_daily_pattern = (
+      pred_temp_base['weekly'] + pred_temp_base['daily']
+      if 'weekly' in pred_temp_base
+      else pred_temp_base['daily']
+  )
+  rh_daily_pattern = (
+      pred_rh_base['weekly'] + pred_rh_base['daily']
+      if 'weekly' in pred_rh_base
+      else pred_rh_base['daily']
+  )
+
+  # 3. Normalisasi & Kalibrasi berbasis Suhu/RH Real-time saat ini (input_temp_amb & input_rh_amb)
+  # Menggunakan suhu real-time dari API / Sidebar sebagai jangkar (anchor)
+  anchor_temp = float(input_temp_amb)
+  anchor_rh = float(input_rh_amb)
+
+  # Salurkan pola fluktuasi harian ke rentang waktu 24 jam ke depan
+  temp_vals = []
+  rh_vals = []
+
+  for dt in future_dates:
+    hour_idx = dt.hour
+    # Ambil deviasi relatif dari jam tersebut
+    dev_temp = temp_daily_pattern.iloc[hour_idx] - temp_daily_pattern.mean()
+    dev_rh = rh_daily_pattern.iloc[hour_idx] - rh_daily_pattern.mean()
+
+    calc_t = round(anchor_temp + dev_temp, 1)
+    calc_rh = round(np.clip(anchor_rh + dev_rh, 30.0, 99.0), 0)
+
+    temp_vals.append(calc_t)
+    rh_vals.append(calc_rh)
 
   df_forecast = pd.DataFrame({
-      'Waktu': forecast_temp['ds'],
-      'Prediksi_Temp_°C': forecast_temp['yhat'].round(1),
-      'Prediksi_RH_%': forecast_rh['yhat'].round(0),
+      'Waktu': future_dates,
+      'Prediksi_Temp_°C': temp_vals,
+      'Prediksi_RH_%': rh_vals,
   })
 
   return df_forecast
