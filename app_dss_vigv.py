@@ -1,3 +1,5 @@
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import math
 import numpy as np
 import pandas as pd
@@ -245,6 +247,119 @@ def predict_intake_temp(t_ambient_base, hour_slot):
   elif "00:00" in hour_slot:
     return round(t_ambient_base + 0.3, 1)
   return round(t_ambient_base + 1.0, 1)
+# ==============================================================================
+# FUNGSI GENERATOR GRAFIK PLOTLY INTERAKTIF
+# ==============================================================================
+def create_vigv_trend_chart(act_vigv, target_vigv, dcs_tat, pred_tat, dcs_tit, pred_tit):
+    """Grafik Perbandingan Trend VIGV Angle & Temperaturnya (Before vs After)."""
+    fig = make_subplots(
+        rows=1, cols=2,
+        subplot_titles=("Perbandingan Bukaan VIGV Angle (°)", "Perubahan Suhu TAT & TIT (°C)"),
+        horizontal_spacing=0.15
+    )
+
+    # 1. Bar Chart VIGV (Actual vs Target Ideal)
+    fig.add_trace(
+        go.Bar(
+            x=["Actual VIGV (DCS)", "Target VIGV (DSS)"],
+            y=[act_vigv, target_vigv],
+            text=[f"{act_vigv:.1f}°", f"{target_vigv:.2f}°"],
+            textposition='auto',
+            marker_color=['#64748B', '#1E3A8A' if target_vigv >= act_vigv else '#D97706'],
+            name="VIGV Angle"
+        ),
+        row=1, col=1
+    )
+
+    # 2. Grouped Bar Chart Suhu TAT & TIT
+    fig.add_trace(
+        go.Bar(
+            x=["TAT (Exhaust)", "TIT (Inlet)"],
+            y=[dcs_tat, dcs_tit],
+            text=[f"{dcs_tat:.1f}°C", f"{dcs_tit:.1f}°C"],
+            textposition='auto',
+            marker_color='#EF4444',
+            name="Before Trim"
+        ),
+        row=1, col=2
+    )
+    
+    fig.add_trace(
+        go.Bar(
+            x=["TAT (Exhaust)", "TIT (Inlet)"],
+            y=[pred_tat, pred_tit],
+            text=[f"{pred_tat:.1f}°C", f"{pred_tit:.1f}°C"],
+            textposition='auto',
+            marker_color='#10B981',
+            name="After Trim"
+        ),
+        row=1, col=2
+    )
+
+    fig.update_layout(
+        height=380,
+        showlegend=True,
+        barmode='group',
+        margin=dict(l=20, r=20, t=40, b=20),
+        template="plotly_white"
+    )
+    fig.update_yaxes(title_text="Sudut (°)", row=1, col=1)
+    fig.update_yaxes(title_text="Temperatur (°C)", row=1, col=2)
+    
+    return fig
+
+
+def create_performance_map(load_mw, pcd_bar, target_vigv):
+    """Peta Efisiensi (Performance Map) GT13E1 dengan Operating Point Real-Time."""
+    fig = go.Figure()
+
+    # 1. Buat Kontur / Kurva Kinerja Iso-Efficiency GT13E1 (Simulasi Envelope)
+    loads = np.linspace(40, 150, 50)
+    pcd_low = (loads / 150.0) * 11.5 + 2.0
+    pcd_opt = (loads / 150.0) * 13.0 + 1.8
+    pcd_high = (loads / 150.0) * 14.2 + 1.5
+
+    # Area Operasi Normal (Envelope)
+    fig.add_trace(go.Scatter(
+        x=np.concatenate([loads, loads[::-1]]),
+        y=np.concatenate([pcd_high, pcd_low[::-1]]),
+        fill='toself',
+        fillcolor='rgba(219, 234, 254, 0.5)',
+        line=dict(color='rgba(255,255,255,0)'),
+        hoverinfo="skip",
+        name="Operating Envelope"
+    ))
+
+    # Garis Kurva Optimum VIGV
+    fig.add_trace(go.Scatter(
+        x=loads, y=pcd_opt,
+        mode='lines',
+        line=dict(color='#2563EB', width=2, dash='dash'),
+        name="Optimum VIGV Line"
+    ))
+
+    # 2. Titik Operasi Saat Ini (Operating Point)
+    fig.add_trace(go.Scatter(
+        x=[load_mw],
+        y=[pcd_bar],
+        mode='markers+text',
+        marker=dict(size=16, color='#DC2626', symbol='cross-dot', line=dict(width=2, color='black')),
+        text=[f"  Current Operating Point ({load_mw:.1f} MW, {pcd_bar:.1f} bar)"],
+        textposition="top right",
+        name="Aktual Unit GT"
+    ))
+
+    fig.update_layout(
+        title="Peta Kinerja & Operating Envelope GT13E1 (Load vs Pcd)",
+        xaxis_title="Beban Generator (MW)",
+        yaxis_title="Pressure Discharge Compressor / Pcd (bar)",
+        height=400,
+        margin=dict(l=20, r=20, t=50, b=20),
+        template="plotly_white",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
+    
+    return fig
 
 
 # ==============================================================================
@@ -497,6 +612,23 @@ with tab2:
       st.warning(f"⚠️ **ALARM SURGE Pcd!** ({dcs_pcd:.1f} bar ≥ 13.5 bar)")
     else:
       st.success(f"✅ Pcd Normal ({dcs_pcd:.1f} bar)")
+# --------------------------------------------------------------------------
+  # GRAFIK INTERAKTIF PLOTLY (TREND VIGV & PERFORMANCE MAP)
+  # --------------------------------------------------------------------------
+  st.markdown("---")
+  st.subheader("📊 Visualisasi Trend & Peta Efisiensi GT13E1 Real-Time")
+
+  chart_tab1, chart_tab2 = st.tabs(["📈 Trend VIGV & Respon Suhu", "🗺️ Peta Efisiensi Operasi (Performance Map)"])
+
+  with chart_tab1:
+      fig_trend = create_vigv_trend_chart(
+          dcs_act_vigv, target_vigv_live, dcs_tat, pred_tat_after, dcs_tit, pred_tit_after
+      )
+      st.plotly_chart(fig_trend, use_container_width=True)
+
+  with chart_tab2:
+      fig_map = create_performance_map(dcs_set_point_load, dcs_pcd, target_vigv_live)
+      st.plotly_chart(fig_map, use_container_width=True)
 
 # ------------------------------------------------------------------------------
 # TAB 3: MANFAAT & PREDIKSI OPERASIONAL
