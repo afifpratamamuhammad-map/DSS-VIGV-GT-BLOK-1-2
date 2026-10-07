@@ -5,6 +5,43 @@ import numpy as np
 import pandas as pd
 import requests
 import streamlit as st
+import joblib
+from prophet import Prophet
+
+
+# Cache model agar tidak di-reload berulang kali oleh Streamlit
+@st.cache_resource
+def load_prophet_weather_models():
+  try:
+    m_temp = joblib.load('model_temp_prophet.pkl')
+    m_rh = joblib.load('model_rh_prophet.pkl')
+    return m_temp, m_rh
+  except Exception:
+    return None, None
+
+
+m_temp_prophet, m_rh_prophet = load_prophet_weather_models()
+
+
+def predict_weather_24h_prophet(m_temp, m_rh):
+  """Melakukan inferensi prediksi 24 jam ke depan menggunakan Prophet."""
+  if m_temp is None or m_rh is None:
+    return None
+
+  # Membuat dataframe 24 jam ke depan
+  future_temp = m_temp.make_future_dataframe(periods=24, freq='H')
+  forecast_temp = m_temp.predict(future_temp).tail(24)
+
+  future_rh = m_rh.make_future_dataframe(periods=24, freq='H')
+  forecast_rh = m_rh.predict(future_rh).tail(24)
+
+  df_forecast = pd.DataFrame({
+      'Waktu': forecast_temp['ds'],
+      'Prediksi_Temp_°C': forecast_temp['yhat'].round(1),
+      'Prediksi_RH_%': forecast_rh['yhat'].round(0),
+  })
+
+  return df_forecast
 
 # ==============================================================================
 # 1. KONFIGURASI HALAMAN STREAMLIT
@@ -474,7 +511,74 @@ with tab1:
         get_trim_from_row, axis=1
     )
     st.dataframe(df_hourly, use_container_width=True)
+# --------------------------------------------------------------------------
+  # AI TIME-SERIES WEATHER FORECASTING (PROPHET 24-HOUR)
+  # --------------------------------------------------------------------------
+  st.markdown("---")
+  st.subheader("🤖 Local AI Weather Forecasting (Prophet Model 24 Jam)")
 
+  df_ai_forecast = predict_weather_24h_prophet(m_temp_prophet, m_rh_prophet)
+
+  if df_ai_forecast is not None:
+
+    def calc_trim_row_ai(row):
+      rho_row, _ = calculate_moist_air_density(
+          row["Prediksi_Temp_°C"], row["Prediksi_RH_%"], input_pamb_mbar
+      )
+      return calculate_vigv_trim(
+          row["Prediksi_Temp_°C"] + 1.2,
+          load_mw_plan,
+          rho_moist=rho_row,
+          mode_simulasi=True,
+      )[0]
+
+    df_ai_forecast["Target_VIGV_Trim_°"] = df_ai_forecast.apply(
+        calc_trim_row_ai, axis=1
+    )
+
+    # Grafik Dual-Axis Plotly (Suhu & Target VIGV Trim)
+    fig_ai = go.Figure()
+    fig_ai.add_trace(
+        go.Scatter(
+            x=df_ai_forecast["Waktu"],
+            y=df_ai_forecast["Prediksi_Temp_°C"],
+            name="Prediksi Suhu Ambeien (°C)",
+            line=dict(color="#EF4444", width=2),
+        )
+    )
+    fig_ai.add_trace(
+        go.Scatter(
+            x=df_ai_forecast["Waktu"],
+            y=df_ai_forecast["Target_VIGV_Trim_°"],
+            name="Rekomendasi VIGV Trim (°)",
+            line=dict(color="#2563EB", width=2, dash="dash"),
+            yaxis="y2",
+        )
+    )
+
+    fig_ai.update_layout(
+        title="Prediksi Fluktuasi Suhu Pesisir & Rekomendasi VIGV Trim (24 Jam)",
+        xaxis_title="Waktu (Jam)",
+        yaxis=dict(title="Suhu (°C)"),
+        yaxis2=dict(
+            title="VIGV Trim (°)",
+            overlaying="y",
+            side="right",
+            range=[0, 2.5],
+        ),
+        height=380,
+        template="plotly_white",
+    )
+
+    st.plotly_chart(fig_ai, use_container_width=True)
+
+    with st.expander("🔍 Lihat Detail Tabel Prediksi Cuaca 24 Jam ML"):
+      st.dataframe(df_ai_forecast, use_container_width=True)
+  else:
+    st.info(
+        "💡 Model `.pkl` lokal belum diunggah ke repositori GitHub. Tampilan"
+        " saat ini menggunakan Live API standar."
+    )
 # ------------------------------------------------------------------------------
 # TAB 2: LIVE VERIFICATION & DCS SAFETY
 # ------------------------------------------------------------------------------
