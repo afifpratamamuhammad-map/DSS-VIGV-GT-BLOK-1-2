@@ -22,17 +22,19 @@ def load_prophet_weather_models():
 
 m_temp_prophet, m_rh_prophet = load_prophet_weather_models()
 
-
 def predict_weather_24h_prophet(m_temp, m_rh):
   if m_temp is None or m_rh is None:
     return None
 
-  # Menggunakan 'h' huruf kecil
-  future_temp = m_temp.make_future_dataframe(periods=24, freq='h')
-  forecast_temp = m_temp.predict(future_temp).tail(24)
+  # 1. Buat rentang waktu 24 jam ke depan mulai dari HARI INI saat aplikasi dibuka
+  now = pd.Timestamp.now().floor('h')
+  future_dates = pd.date_range(start=now, periods=24, freq='h')
 
-  future_rh = m_rh.make_future_dataframe(periods=24, freq='h')
-  forecast_rh = m_rh.predict(future_rh).tail(24)
+  future_df = pd.DataFrame({'ds': future_dates})
+
+  # 2. Lakukan prediksi berdasarkan pola musiman yang dipelajari Prophet
+  forecast_temp = m_temp.predict(future_df)
+  forecast_rh = m_rh.predict(future_df)
 
   df_forecast = pd.DataFrame({
       'Waktu': forecast_temp['ds'],
