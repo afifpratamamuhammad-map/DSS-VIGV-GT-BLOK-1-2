@@ -118,17 +118,30 @@ st.markdown(
 # ==============================================================================
 # 2. INTEGRASI API CUACA OPEN-METEO & FISIKA UDARA BASAH (PLTGU PRIOK)
 # ==============================================================================
+
+# Koordinat Presisi Google Maps PLTGU Priok
 LATITUDE = -6.1102
 LONGITUDE = 106.8671
 
-# Endpoint pemanggilan data cuaca API
-url_weather = (
-    f"https://archive-api.open-meteo.com/v1/archive?"
+# Endpoint Terbaik: Kombinasi 3 Hari Historis + 3 Hari Prediksi Ke Depan
+URL_WEATHER = (
+    f"https://api.open-meteo.com/v1/forecast?"
     f"latitude={LATITUDE}&longitude={LONGITUDE}"
-    f"&start_date=2024-01-01&end_date=2026-10-01"
-    f"&hourly=temperature_2m,relative_humidity_2m&timezone=Asia%2FJakarta"
+    f"&hourly=temperature_2m,relative_humidity_2m"
+    f"&past_days=3&forecast_days=3"
+    f"&timezone=Asia%2FJakarta"
 )
 
+
+def get_weather_data():
+  try:
+    response = requests.get(URL_WEATHER, timeout=5)
+    if response.status_code == 200:
+      return response.json()
+    else:
+      return None
+  except Exception:
+    return None
 
 @st.cache_data(ttl=600)
 def fetch_priok_weather_api():
