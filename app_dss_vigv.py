@@ -118,8 +118,16 @@ st.markdown(
 # ==============================================================================
 # 2. INTEGRASI API CUACA OPEN-METEO & FISIKA UDARA BASAH (PLTGU PRIOK)
 # ==============================================================================
-PRIOK_LAT = -6.1044
-PRIOK_LON = 106.8778
+LATITUDE = -6.1102
+LONGITUDE = 106.8671
+
+# Endpoint pemanggilan data cuaca API
+url_weather = (
+    f"https://archive-api.open-meteo.com/v1/archive?"
+    f"latitude={LATITUDE}&longitude={LONGITUDE}"
+    f"&start_date=2024-01-01&end_date=2026-10-01"
+    f"&hourly=temperature_2m,relative_humidity_2m&timezone=Asia%2FJakarta"
+)
 
 
 @st.cache_data(ttl=600)
