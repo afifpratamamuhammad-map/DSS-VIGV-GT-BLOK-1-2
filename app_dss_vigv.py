@@ -108,18 +108,97 @@ def predict_weather_24h_prophet(m_temp, m_rh, anchor_temp, anchor_rh):
 
 
 # ==============================================================================
-# 3. INTEGRASI API CUACA OPEN-METEO & FISIKA UDARA BASAH (PLTGU PRIOK)
+# 3. FUNGSI PERHITUNGAN FISIKA UDARA BASAH & VIGV TRIM (DITARUH DI ATAS)
 # ==============================================================================
-# Koordinat Presisi Google Maps Area Pembangkit PLTGU Priok
+def calculate_moist_air_density(temp_c, rh_pct, press_mbar):
+  """Kalkulasi Kerapatan Udara Basah (Moist Air Density - kg/m³)"""
+  if temp_c is None or rh_pct is None or press_mbar is None:
+    return 1.165, 15.0
+
+  p_sat = 6.1078 * math.pow(10, (7.5 * temp_c) / (237.3 + temp_c))
+  p_v = (rh_pct / 100.0) * p_sat
+  p_d = press_mbar - p_v
+
+  t_k = temp_c + 273.15
+  r_d = 287.058
+  r_v = 461.495
+
+  rho_d = (p_d * 100.0) / (r_d * t_k)
+  rho_v = (p_v * 100.0) / (r_v * t_k)
+
+  rho_moist = rho_d + rho_v
+  return round(rho_moist, 4), round(p_v, 2)
+
+
+def calculate_vigv_trim(
+    t_intake, load_mw, act_vigv=62.7, rho_moist=1.165, mode_simulasi=False
+):
+  """Kalkulasi VIGV Trim Otomatis 2-Arah Berbasis Koreksi Proporsional Dinamis."""
+  if load_mw <= 0:
+    return 0.0, 0.0, 0.0, 0.0, 'UNIT OFFLINE'
+
+  if mode_simulasi:
+    base_trim_temp = (t_intake - 20.0) * 0.1
+    rho_iso = 1.2041
+    density_corr = (
+        max((rho_iso - rho_moist) / rho_iso, 0.0) * 0.8
+        if rho_moist < rho_iso
+        else 0.0
+    )
+    trim_target = float(np.clip(base_trim_temp + density_corr, 0.2, 2.0))
+    status_msg = 'NORMAL ADVISORY'
+  else:
+    base_ideal_angle = 45.0 + (load_mw / 120.0) * 20.0
+    rho_iso = 1.2041
+    density_corr = max((rho_iso - rho_moist) / rho_iso, 0.0) * 0.8
+    temp_corr = (t_intake - 20.0) * 0.1
+
+    target_angle_ideal = base_ideal_angle + temp_corr + density_corr
+    delta_angle = target_angle_ideal - act_vigv
+    trim_calc = delta_angle * 0.6
+    trim_target = float(np.clip(trim_calc, -2.0, 2.0))
+
+    if trim_target > 0.1:
+      status_msg = 'UNDER-OPENED (Tercekik) ➔ Rekomendasi Trim NAIK (+)'
+    elif trim_target < -0.1:
+      status_msg = 'OVER-OPENED (Kelebihan) ➔ Rekomendasi Trim TURUN (-)'
+    else:
+      status_msg = 'OPTIMAL ➔ Bukaan Sudut Sudah Pas'
+
+  fuel_saved_h = base_saving_rate * (abs(trim_target) / 2.0)
+  fin_saved_h = fuel_saved_h * price_per_unit
+  co2_red_h = fuel_saved_h * co2_factor
+
+  return (
+      round(trim_target, 2),
+      round(fuel_saved_h, 3),
+      round(fin_saved_h, 0),
+      round(co2_red_h, 1),
+      status_msg,
+  )
+
+
+def predict_intake_temp(t_ambient_base, hour_slot):
+  if '10:00' in hour_slot:
+    return round(t_ambient_base + 1.8, 1)
+  elif '17:00' in hour_slot:
+    return round(t_ambient_base + 1.2, 1)
+  elif '00:00' in hour_slot:
+    return round(t_ambient_base + 0.3, 1)
+  return round(t_ambient_base + 1.0, 1)
+
+
+# ==============================================================================
+# 4. INTEGRASI API CUACA OPEN-METEO (KOORDINAT PRESISI PLTGU PRIOK)
+# ==============================================================================
 LATITUDE = -6.1102
 LONGITUDE = 106.8671
 
 
-@st.cache_data(ttl=300)  # Refresh cache setiap 5 menit
+@st.cache_data(ttl=300)
 def fetch_priok_weather_api():
   """Mengambil data cuaca real-time & prediksi dari Open-Meteo API khusus lokasi PLTGU Priok."""
   try:
-    # URL dengan parameter yang paling stabil & kompatibel
     url = (
         f'https://api.open-meteo.com/v1/forecast?latitude={LATITUDE}&longitude={LONGITUDE}'
         '&current=temperature_2m,relative_humidity_2m,surface_pressure'
@@ -131,10 +210,9 @@ def fetch_priok_weather_api():
 
     if response.status_code == 200:
       data = response.json()
-      # Validasi sederhana isi JSON
       if 'current' in data:
         return data
-  except Exception as e:
+  except Exception:
     return None
   return None
 
@@ -147,13 +225,12 @@ if api_available:
   curr_weather = weather_json.get('current', {})
   live_temp = curr_weather.get('temperature_2m', 31.5)
   live_rh = curr_weather.get('relative_humidity_2m', 78.0)
-  # Jika surface_pressure bernilai None, fallback ke standar 1011.0 mbar
   live_press = curr_weather.get('surface_pressure') or 1011.0
 else:
   live_temp, live_rh, live_press = 31.5, 78.0, 1011.0
 
 # ==============================================================================
-# 4. SIDEBAR - CONFIG & DATA BBM (SATUAN DCS: kscm/h & cbm/h)
+# 5. SIDEBAR - CONFIG & DATA BBM (SATUAN DCS: kscm/h & cbm/h)
 # ==============================================================================
 st.sidebar.header('Parameter Pembangkit')
 selected_unit = st.sidebar.selectbox(
@@ -220,66 +297,8 @@ moist_density, vapor_press = calculate_moist_air_density(
 
 
 # ==============================================================================
-# 5. FUNGSI LOGIKA KALKULASI PSIKROMETRIK VIGV TRIM & GRAFIK
+# 6. FUNGSI GENERATOR GRAFIK PLOTLY INTERAKTIF
 # ==============================================================================
-def calculate_vigv_trim(
-    t_intake, load_mw, act_vigv=62.7, rho_moist=1.165, mode_simulasi=False
-):
-  """Kalkulasi VIGV Trim Otomatis 2-Arah Berbasis Koreksi Proporsional Dinamis."""
-  if load_mw <= 0:
-    return 0.0, 0.0, 0.0, 0.0, 'UNIT OFFLINE'
-
-  if mode_simulasi:
-    base_trim_temp = (t_intake - 20.0) * 0.1
-    rho_iso = 1.2041
-    density_corr = (
-        max((rho_iso - rho_moist) / rho_iso, 0.0) * 0.8
-        if rho_moist < rho_iso
-        else 0.0
-    )
-    trim_target = float(np.clip(base_trim_temp + density_corr, 0.2, 2.0))
-    status_msg = 'NORMAL ADVISORY'
-  else:
-    base_ideal_angle = 45.0 + (load_mw / 120.0) * 20.0
-    rho_iso = 1.2041
-    density_corr = max((rho_iso - rho_moist) / rho_iso, 0.0) * 0.8
-    temp_corr = (t_intake - 20.0) * 0.1
-
-    target_angle_ideal = base_ideal_angle + temp_corr + density_corr
-    delta_angle = target_angle_ideal - act_vigv
-    trim_calc = delta_angle * 0.6
-    trim_target = float(np.clip(trim_calc, -2.0, 2.0))
-
-    if trim_target > 0.1:
-      status_msg = 'UNDER-OPENED (Tercekik) ➔ Rekomendasi Trim NAIK (+)'
-    elif trim_target < -0.1:
-      status_msg = 'OVER-OPENED (Kelebihan) ➔ Rekomendasi Trim TURUN (-)'
-    else:
-      status_msg = 'OPTIMAL ➔ Bukaan Sudut Sudah Pas'
-
-  fuel_saved_h = base_saving_rate * (abs(trim_target) / 2.0)
-  fin_saved_h = fuel_saved_h * price_per_unit
-  co2_red_h = fuel_saved_h * co2_factor
-
-  return (
-      round(trim_target, 2),
-      round(fuel_saved_h, 3),
-      round(fin_saved_h, 0),
-      round(co2_red_h, 1),
-      status_msg,
-  )
-
-
-def predict_intake_temp(t_ambient_base, hour_slot):
-  if '10:00' in hour_slot:
-    return round(t_ambient_base + 1.8, 1)
-  elif '17:00' in hour_slot:
-    return round(t_ambient_base + 1.2, 1)
-  elif '00:00' in hour_slot:
-    return round(t_ambient_base + 0.3, 1)
-  return round(t_ambient_base + 1.0, 1)
-
-
 def create_vigv_trend_chart(
     act_vigv, target_vigv, dcs_tat, pred_tat, dcs_tit, pred_tit
 ):
@@ -414,7 +433,7 @@ def create_performance_map(load_mw, pcd_bar, target_vigv):
 
 
 # ==============================================================================
-# 6. TABS DASHBOARD STREAMLIT
+# 7. TABS DASHBOARD STREAMLIT
 # ==============================================================================
 tab1, tab2, tab3 = st.tabs([
     '1. Live Weather API & Prediksi Shift (10:00, 17:00, 00:00)',
