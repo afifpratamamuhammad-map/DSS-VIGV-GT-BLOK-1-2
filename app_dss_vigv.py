@@ -9,7 +9,7 @@ import requests
 import streamlit as st
 
 # ==============================================================================
-# 1. KONFIGURASI HALAMAN STREAMLIT & STYLING CSS
+# 1. KONFIGURASI HALAMAN STREAMLIT & MODERN CLEAN UI STYLING
 # ==============================================================================
 st.set_page_config(
     page_title="DECISION SUPPORT SYSTEM GT BLOK 1-2 UBP PRIOK",
@@ -20,24 +20,23 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    .main-header { font-size: 24px; font-weight: bold; color: #1E3A8A; text-align: center; }
-    .sub-header { font-size: 13px; color: #4B5563; text-align: center; margin-bottom: 20px; }
-    .card-safe { background-color: #F0FDF4; border-left: 6px solid #16A34A; padding: 12px; border-radius: 8px; }
-    .card-warn { background-color: #FEFCE8; border-left: 6px solid #CA8A04; padding: 12px; border-radius: 8px; }
-    .card-danger { background-color: #FEF2F2; border-left: 6px solid #DC2626; padding: 12px; border-radius: 8px; }
-    .weather-card { background-color: #EFF6FF; border: 1px solid #BFDBFE; padding: 12px; border-radius: 8px; }
+    .stApp { background-color: #F8FAFC; font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+    
+    /* Breadcrumb Header Navigasi */
+    .breadcrumb-nav { font-size: 13px; color: #64748B; font-weight: 500; margin-bottom: 2px; }
+    .breadcrumb-nav span { color: #2563EB; font-weight: 600; }
+    .app-title { font-size: 24px; font-weight: 800; color: #0F172A; margin-bottom: 18px; letter-spacing: -0.5px; }
+    
+    /* Clean UI Custom Cards */
+    .card-safe { background-color: #F0FDF4; border-left: 6px solid #16A34A; padding: 16px; border-radius: 8px; margin-bottom: 12px; }
+    .card-warn { background-color: #FEFCE8; border-left: 6px solid #CA8A04; padding: 16px; border-radius: 8px; margin-bottom: 12px; }
+    .card-danger { background-color: #FEF2F2; border-left: 6px solid #DC2626; padding: 16px; border-radius: 8px; margin-bottom: 12px; }
+    .weather-card { background-color: #EFF6FF; border: 1px solid #BFDBFE; padding: 16px; border-radius: 8px; margin-bottom: 16px; }
+    
+    /* Sidebar Styling */
+    section[data-testid="stSidebar"] { background-color: #FFFFFF; border-right: 1px solid #E2E8F0; }
     </style>
 """,
-    unsafe_allow_html=True,
-)
-
-st.markdown(
-    '<div class="main-header">DSS OPTIMIZATION GT BLOK 1-2 UBP PRIOK</div>',
-    unsafe_allow_html=True,
-)
-st.markdown(
-    '<div class="sub-header">System Decision Support Optimization VIGV Trim,'
-    ' Psychrometric Weather Telemetry & Air Intake Health Index</div>',
     unsafe_allow_html=True,
 )
 
@@ -108,7 +107,7 @@ def predict_weather_24h_prophet(m_temp, m_rh, anchor_temp, anchor_rh):
 
 
 # ==============================================================================
-# 3. FUNGSI PERHITUNGAN FISIKA UDARA BASAH & VIGV TRIM (DITARUH DI ATAS)
+# 3. FUNGSI PERHITUNGAN FISIKA UDARA BASAH & VIGV TRIM
 # ==============================================================================
 def calculate_moist_air_density(temp_c, rh_pct, press_mbar):
   """Kalkulasi Kerapatan Udara Basah (Moist Air Density - kg/m³)"""
@@ -189,7 +188,7 @@ def predict_intake_temp(t_ambient_base, hour_slot):
 
 
 # ==============================================================================
-# 4. INTEGRASI API CUACA OPEN-METEO (KOORDINAT PRESISI PLTGU PRIOK)
+# 4. INTEGRASI API CUACA OPEN-METEO
 # ==============================================================================
 LATITUDE = -6.1102
 LONGITUDE = 106.8671
@@ -217,7 +216,6 @@ def fetch_priok_weather_api():
   return None
 
 
-# Ambil Data API Cuaca
 weather_json = fetch_priok_weather_api()
 api_available = weather_json is not None
 
@@ -230,21 +228,33 @@ else:
   live_temp, live_rh, live_press = 31.5, 78.0, 1011.0
 
 # ==============================================================================
-# 5. SIDEBAR - CONFIG & DATA BBM (SATUAN DCS: kscm/h & cbm/h)
+# 5. SIDEBAR - NAVIGASI CLEAN UI & CONFIG
 # ==============================================================================
-st.sidebar.header('Parameter Pembangkit')
+st.sidebar.markdown('### 🏢 Unit Selection')
 selected_unit = st.sidebar.selectbox(
     'Pilih Unit Turbin Gas:',
     ['GT 1.1', 'GT 1.2', 'GT 1.3', 'GT 2.1', 'GT 2.2', 'GT 2.3'],
 )
 
+active_page = st.sidebar.radio(
+    '📍 Navigasi Modul:',
+    [
+        '📊 Live Weather & Prediksi Shift',
+        '🎛️ Live Verification & DCS Interlock',
+        '🔮 What-If Analysis & Dynamic Simulation',
+        '🛡️ Manfaat & Prediksi Filter RUL',
+    ],
+)
+
+st.sidebar.markdown('---')
+st.sidebar.markdown('### ⛽ Parameter Pembangkit')
 fuel_mode = st.sidebar.radio(
     'Mode Bahan Bakar :',
     ('Gas Alam (Natural Gas)', 'HSD (High Speed Diesel / Solar)'),
 )
 
 st.sidebar.markdown('---')
-st.sidebar.header('🌐 Telemetri Stasiun Cuaca')
+st.sidebar.markdown('### 🌐 Telemetri Stasiun Cuaca')
 use_live_api = st.sidebar.toggle(
     'Gunakan Live API Cuaca Tanjung Priok', value=api_available
 )
@@ -272,27 +282,37 @@ weather_condition = st.sidebar.selectbox(
     ['Cerah / Normal', 'Mendung / Gerimis', 'Hujan Deras (Extreme Drop)'],
 )
 
-# Penyesuaian Satuan DCS dan Konstanta Perhitungan Baseline
 if fuel_mode == 'Gas Alam (Natural Gas)':
-  lhv_fuel = 8800.0 * 1000.0  # kkal / kscm
-  co2_factor = 1.98 * 1000.0  # kg CO2 / kscm
-  price_per_unit = 4025.0 * 1000.0  # Rp / kscm
+  lhv_fuel = 8800.0 * 1000.0
+  co2_factor = 1.98 * 1000.0
+  price_per_unit = 4025.0 * 1000.0
   fuel_unit = 'kscm/h'
   fuel_short = 'Gas Alam'
-  base_saving_rate = 0.247  # kscm/h
-  default_fuel_cons = 35.30  # kscm/h
+  base_saving_rate = 0.247
+  default_fuel_cons = 35.30
 else:
-  lhv_fuel = 8600.0 * 1000.0  # kkal / cbm
-  co2_factor = 2.68 * 1000.0  # kg CO2 / cbm
-  price_per_unit = 13500.0 * 1000.0  # Rp / cbm
+  lhv_fuel = 8600.0 * 1000.0
+  co2_factor = 2.68 * 1000.0
+  price_per_unit = 13500.0 * 1000.0
   fuel_unit = 'cbm/h'
   fuel_short = 'HSD (Solar)'
-  base_saving_rate = 0.220  # cbm/h
-  default_fuel_cons = 31.20  # cbm/h
+  base_saving_rate = 0.220
+  default_fuel_cons = 31.20
 
-# Hitung Kerapatan Udara Basah Real-Time
 moist_density, vapor_press = calculate_moist_air_density(
     input_temp_amb, input_rh_amb, input_pamb_mbar
+)
+
+# RENDER HEADER BREADCRUMB
+page_name_clean = active_page.split(' ', 1)[1]
+st.markdown(
+    f'<div class="breadcrumb-nav">PLTGU Priok / {selected_unit} /'
+    f' <span>{page_name_clean}</span></div>',
+    unsafe_allow_html=True,
+)
+st.markdown(
+    f'<div class="app-title">DSS OPTIMIZATION — {selected_unit}</div>',
+    unsafe_allow_html=True,
 )
 
 
@@ -433,18 +453,13 @@ def create_performance_map(load_mw, pcd_bar, target_vigv):
 
 
 # ==============================================================================
-# 7. TABS DASHBOARD STREAMLIT
+# 7. ROUTING HALAMAN DENGAN FITUR LENGKAP
 # ==============================================================================
-tab1, tab2, tab3 = st.tabs([
-    '1. Live Weather API & Prediksi Shift (10:00, 17:00, 00:00)',
-    '2. Live Verification & DCS Interlock',
-    '3. Manfaat & Prediksi Filter RUL',
-])
 
 # ------------------------------------------------------------------------------
-# TAB 1: PREDIKSI 3 SHIFT & LIVE TELEMETRI CUACA
+# HALAMAN 1: LIVE WEATHER & PREDIKSI SHIFT
 # ------------------------------------------------------------------------------
-with tab1:
+if active_page == '📊 Live Weather & Prediksi Shift':
   st.subheader('🌐 Monitoring Live Telemetri Cuaca & Prediksi VIGV Trim')
 
   st.markdown('<div class="weather-card">', unsafe_allow_html=True)
@@ -609,9 +624,9 @@ with tab1:
     )
 
 # ------------------------------------------------------------------------------
-# TAB 2: LIVE VERIFICATION & DCS SAFETY
+# HALAMAN 2: LIVE VERIFICATION & DCS SAFETY
 # ------------------------------------------------------------------------------
-with tab2:
+elif active_page == '🎛️ Live Verification & DCS Interlock':
   st.subheader('DCS Inputs & Protective Limit Monitor')
 
   col_d1, col_d2, col_d3 = st.columns([1.2, 1.2, 1.6])
@@ -767,9 +782,68 @@ with tab2:
     st.plotly_chart(fig_map, use_container_width=True)
 
 # ------------------------------------------------------------------------------
-# TAB 3: MANFAAT & PREDIKSI OPERASIONAL
+# HALAMAN 3: WHAT-IF ANALYSIS & DYNAMIC SIMULATION
 # ------------------------------------------------------------------------------
-with tab3:
+elif active_page == '🔮 What-If Analysis & Dynamic Simulation':
+  st.subheader('🔮 Visual What-If Analysis & Dynamic Simulation')
+  st.caption(
+      'Geser slider di bawah ini untuk mensimulasikan dampak fluktuasi beban dan'
+      ' suhu ambeien secara dinamis.'
+  )
+
+  sim_col1, sim_col2 = st.columns(2)
+  sim_mw = sim_col1.slider('Simulasi Beban Generator (MW)', 40.0, 140.0, 104.0)
+  sim_temp = sim_col2.slider(
+      'Simulasi Perubahan Suhu Intake (°C)', 20.0, 40.0, 32.5
+  )
+
+  sim_rho, _ = calculate_moist_air_density(sim_temp, 75.0, 1011.0)
+  sim_trim, sim_fsav, sim_rpsav, sim_co2, _ = calculate_vigv_trim(
+      sim_temp, sim_mw, rho_moist=sim_rho, mode_simulasi=True
+  )
+
+  sim_pcd = (sim_mw / 150.0) * 13.0 + 1.8 + (sim_trim * 0.1)
+  fig_sim = create_performance_map(sim_mw, sim_pcd, sim_trim)
+
+  res1, res2 = st.columns([1.5, 1])
+  with res1:
+    st.plotly_chart(fig_sim, use_container_width=True)
+  with res2:
+    st.markdown('<div class="card-safe">', unsafe_allow_html=True)
+    st.markdown('#### Hasil Evaluasi Dynamic What-If')
+    st.metric('Rekomendasi VIGV Trim', f'+{sim_trim:.2f} °')
+    st.metric('Estimasi Hemat BBM', f'{sim_fsav:.3f} {fuel_unit}')
+    st.metric('Estimasi Hemat Biaya', f'Rp {sim_rpsav:,.0f} / jam')
+    st.metric('Reduksi Emisi CO2', f'{sim_co2:.1f} kg CO2 / jam')
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# ------------------------------------------------------------------------------
+# HALAMAN 4: MANFAAT & PREDIKSI FILTER RUL
+# ------------------------------------------------------------------------------
+elif active_page == '🛡️ Manfaat & Prediksi Filter RUL':
+  # Tetap hitung variabel yang dibutuhkan dari DCS Inputs
+  dcs_set_point_load = 104.0
+  dcs_act_vigv = 62.7
+  dcs_fuel_cons = default_fuel_cons
+  dcs_tat = 498.0
+  dcs_temp_intake = round(input_temp_amb + 1.2, 1)
+  dcs_pcd = 11.2
+  dcs_pamb_mbar = float(input_pamb_mbar)
+  dcs_rh_pct = float(input_rh_amb)
+
+  rho_live_dcs, _ = calculate_moist_air_density(
+      dcs_temp_intake, dcs_rh_pct, dcs_pamb_mbar
+  )
+  trim_live, f_sav_live, rp_sav_live, co2_live, status_msg_live = (
+      calculate_vigv_trim(
+          dcs_temp_intake,
+          dcs_set_point_load,
+          act_vigv=dcs_act_vigv,
+          rho_moist=rho_live_dcs,
+          mode_simulasi=False,
+      )
+  )
+
   st.subheader(f'Ringkasan Manfaat & Prediksi ({fuel_mode})')
 
   dcs_pamb_bar = dcs_pamb_mbar / 1000.0
@@ -859,7 +933,7 @@ with tab3:
     if virtual_dp_filter_bar >= dp_replace_limit_bar:
       st.error(
           '🚨 **CRITICAL REPLACE!** Estimated DP ≥ 0,019 bar'
-          f' ({virtual_dp_mbar:.1f} mbar). Filter kotor, jadwalkan'
+          f' ({virtual_dp_mbar:.1f} mbar). Filter kotor, jadwatchkan'
           ' penggantian segera!'
       )
     elif virtual_dp_filter_bar >= dp_warning_limit_bar:
