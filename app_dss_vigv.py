@@ -265,13 +265,8 @@ def predict_intake_temp_adaptive(t_ambient, load_mw, hour):
     """
     Kalkulasi Adaptif Suhu Intake berdasarkan Efek Radiasi Pembangkit & Beban GT.
     """
-    # 1. Base Offset akibat penyerapan panas di Ducting & Filter House
     base_offset = 0.8
-    
-    # 2. Factor Beban GT (Semakin tinggi MW, lingkungan semakin panas)
-    load_factor = (load_mw / 140.0) * 0.7  # Max Tambahan ~0.7°C pada Peak Load
-    
-    # 3. Factor Jam (Radiasi Matahari terkuat jam 11:00 - 14:00)
+    load_factor = (load_mw / 140.0) * 0.7
     time_factor = 0.8 if 11 <= hour <= 14 else (0.4 if 7 <= hour <= 17 else 0.1)
     
     total_deviasi = base_offset + load_factor + time_factor
@@ -607,6 +602,7 @@ if active_page == 'Live Weather & Prediksi Shift':
     )
 
     slots = ['10:00 WIB (Pagi)', '17:00 WIB (Siang)', '00:00 WIB (Malam)']
+    hour_mapping = [10, 17, 0]
     cols_slot = st.columns(3)
 
     for idx, slot_name in enumerate(slots):
@@ -617,7 +613,7 @@ if active_page == 'Live Weather & Prediksi Shift':
                 base_adj = t_amb_input + (
                     1.5 if idx == 0 else (0.5 if idx == 1 else -2.0)
                 )
-                t_pred = predict_intake_temp(base_adj, slot_name)
+                t_pred = predict_intake_temp_adaptive(base_adj, load_mw_plan, hour_mapping[idx])
 
             rho_slot, _ = calculate_moist_air_density(
                 t_pred, input_rh_amb, input_pamb_mbar
