@@ -261,14 +261,21 @@ def calculate_vigv_trim(
     )
 
 
-def predict_intake_temp(t_ambient_base, hour_slot):
-    if '10:00' in hour_slot:
-        return round(t_ambient_base + 1.8, 1)
-    elif '17:00' in hour_slot:
-        return round(t_ambient_base + 1.2, 1)
-    elif '00:00' in hour_slot:
-        return round(t_ambient_base + 0.3, 1)
-    return round(t_ambient_base + 1.0, 1)
+def predict_intake_temp_adaptive(t_ambient, load_mw, hour):
+    """
+    Kalkulasi Adaptif Suhu Intake berdasarkan Efek Radiasi Pembangkit & Beban GT.
+    """
+    # 1. Base Offset akibat penyerapan panas di Ducting & Filter House
+    base_offset = 0.8
+    
+    # 2. Factor Beban GT (Semakin tinggi MW, lingkungan semakin panas)
+    load_factor = (load_mw / 140.0) * 0.7  # Max Tambahan ~0.7°C pada Peak Load
+    
+    # 3. Factor Jam (Radiasi Matahari terkuat jam 11:00 - 14:00)
+    time_factor = 0.8 if 11 <= hour <= 14 else (0.4 if 7 <= hour <= 17 else 0.1)
+    
+    total_deviasi = base_offset + load_factor + time_factor
+    return round(t_ambient + total_deviasi, 1)
 
 
 # ==============================================================================
