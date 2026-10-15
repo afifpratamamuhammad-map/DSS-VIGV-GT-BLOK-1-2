@@ -193,95 +193,91 @@ def predict_intake_temp(t_ambient_base, hour_slot):
 LATITUDE = -6.1102
 LONGITUDE = 106.8671
 
-
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=300, show_spinner=False)
 def fetch_priok_weather_api():
-  """Mengambil data cuaca real-time & prediksi dari Open-Meteo API khusus lokasi PLTGU Priok."""
-  try:
+    """Mengambil data cuaca real-time & prediksi dari Open-Meteo API khusus lokasi PLTGU Priok."""
     url = (
-        f'https://api.open-meteo.com/v1/forecast?latitude={LATITUDE}&longitude={LONGITUDE}'
-        '&current=temperature_2m,relative_humidity_2m,surface_pressure'
-        '&hourly=temperature_2m,relative_humidity_2m,surface_pressure'
-        '&timezone=Asia%2FJakarta'
+        f"https://api.open-meteo.com/v1/forecast?latitude={LATITUDE}&longitude={LONGITUDE}"
+        "&current=temperature_2m,relative_humidity_2m,surface_pressure"
+        "&hourly=temperature_2m,relative_humidity_2m,surface_pressure"
+        "&timezone=Asia%2FJakarta"
     )
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-    response = requests.get(url, headers=headers, timeout=5)
-
-    if response.status_code == 200:
-      data = response.json()
-      if 'current' in data:
-        return data
-  except Exception:
+    
+    # Menambahkan penanganan exception dan batas timeout yang lebih fleksibel (8 detik)
+    try:
+        response = requests.get(url, headers=headers, timeout=8)
+        if response.status_code == 200:
+            data = response.json()
+            if 'current' in data:
+                return data
+    except requests.exceptions.RequestException:
+        return None
     return None
-  return None
-
-
-weather_json = fetch_priok_weather_api()
-api_available = weather_json is not None
-
-if api_available:
-  curr_weather = weather_json.get('current', {})
-  live_temp = curr_weather.get('temperature_2m', 31.5)
-  live_rh = curr_weather.get('relative_humidity_2m', 78.0)
-  live_press = curr_weather.get('surface_pressure') or 1011.0
-else:
-  live_temp, live_rh, live_press = 31.5, 78.0, 1011.0
 
 # ==============================================================================
 # 5. SIDEBAR - NAVIGASI CLEAN UI & CONFIG
 # ==============================================================================
-st.sidebar.markdown('### 🏢 Unit Selection')
+st.sidebar.markdown("### Unit Selection")
 selected_unit = st.sidebar.selectbox(
-    'Pilih Unit Turbin Gas:',
-    ['GT 1.1', 'GT 1.2', 'GT 1.3', 'GT 2.1', 'GT 2.2', 'GT 2.3'],
+    "Pilih Unit Turbin Gas:",
+    ["GT 1.1", "GT 1.2", "GT 1.3", "GT 2.1", "GT 2.2", "GT 2.3"]
 )
 
 active_page = st.sidebar.radio(
-    '📍 Navigasi Modul:',
+    "Navigasi Modul:",
     [
-        '📊 Live Weather & Prediksi Shift',
-        '🎛️ Live Verification & DCS Interlock',
-        '🔮 What-If Analysis & Dynamic Simulation',
-        '🛡️ Manfaat & Prediksi Filter RUL',
-    ],
+        "Live Weather & Prediksi Ambient Temperature",
+        "Live Verification Parameter DCS",
+        "What-If Analysis & Dynamic Simulation",
+        "Manfaat & Prediksi Filter Air Intake"
+    ]
 )
 
-st.sidebar.markdown('---')
-st.sidebar.markdown('### ⛽ Parameter Pembangkit')
+st.sidebar.markdown("---")
+st.sidebar.markdown("### Fuel Selection Gas Turbine")
 fuel_mode = st.sidebar.radio(
-    'Mode Bahan Bakar :',
-    ('Gas Alam (Natural Gas)', 'HSD (High Speed Diesel / Solar)'),
+    "Mode Bahan Bakar :",
+    ("Gas Alam (Natural Gas)", "HSD (High Speed Diesel / Solar)")
 )
 
-st.sidebar.markdown('---')
-st.sidebar.markdown('### 🌐 Telemetri Stasiun Cuaca')
-use_live_api = st.sidebar.toggle(
-    'Gunakan Live API Cuaca Tanjung Priok', value=api_available
-)
+st.sidebar.markdown("---")
+st.sidebar.markdown("### Telemetri Stasiun Cuaca")
 
-if use_live_api and api_available:
-  st.sidebar.success(f'🟢 API Terhubung (Lat: {LATITUDE}, Lon: {LONGITUDE})')
-  input_temp_amb = live_temp
-  input_rh_amb = live_rh
-  input_pamb_mbar = live_press
+# Default Toggle ON
+use_live_api = st.sidebar.toggle("Gunakan Live API Cuaca Tanjung Priok", value=True)
+
+# Inisialisasi variabel cuaca dasar
+live_temp, live_rh, live_press = 31.5, 78.0, 1011.0
+api_connected = False
+
+if use_live_api:
+    with st.sidebar.spinner("Menghubungkan ke Stasiun Cuaca..."):
+        weather_json = fetch_priok_weather_api()
+    
+    if weather_json is not None and 'current' in weather_json:
+        curr_weather = weather_json.get('current', {})
+        live_temp = curr_weather.get('temperature_2m', 31.5)
+        live_rh = curr_weather.get('relative_humidity_2m', 78.0)
+        live_press = curr_weather.get('surface_pressure') or 1011.0
+        api_connected = True
+        st.sidebar.success(f"API Terhubung (Lat: {LATITUDE}, Lon: {LONGITUDE})")
+    else:
+        st.sidebar.warning("Gagal koneksi API. Menggunakan Mode Manual.")
+
+if not api_connected:
+    input_temp_amb = st.sidebar.number_input("Temp Ambeien Manual (°C):", value=float(live_temp), step=0.1)
+    input_rh_amb = st.sidebar.number_input("Kelembapan Relative RH Manual (%):", value=float(live_rh), step=1.0)
+    input_pamb_mbar = st.sidebar.number_input("Ambient Press Manual (mbar):", value=float(live_press), step=1.0)
 else:
-  if not api_available and use_live_api:
-    st.sidebar.warning('⚠️ Gagal koneksi API. Menggunakan Mode Manual.')
-  input_temp_amb = st.sidebar.number_input(
-      'Temp Ambeien Manual (°C):', value=31.5, step=0.1
-  )
-  input_rh_amb = st.sidebar.number_input(
-      'Kelembapan Relative RH Manual (%):', value=78.0, step=1.0
-  )
-  input_pamb_mbar = st.sidebar.number_input(
-      'Ambient Press Manual (mbar):', value=1011.0, step=1.0
-  )
+    input_temp_amb = live_temp
+    input_rh_amb = live_rh
+    input_pamb_mbar = live_press
 
 weather_condition = st.sidebar.selectbox(
-    'Kondisi Cuaca Lapangan:',
-    ['Cerah / Normal', 'Mendung / Gerimis', 'Hujan Deras (Extreme Drop)'],
+    "Kondisi Cuaca Lapangan:",
+    ["Cerah / Normal", "Mendung / Gerimis", "Hujan Deras (Extreme Drop)"]
 )
-
 if fuel_mode == 'Gas Alam (Natural Gas)':
   lhv_fuel = 8800.0 * 1000.0
   co2_factor = 1.98 * 1000.0
@@ -459,8 +455,8 @@ def create_performance_map(load_mw, pcd_bar, target_vigv):
 # ------------------------------------------------------------------------------
 # HALAMAN 1: LIVE WEATHER & PREDIKSI SHIFT
 # ------------------------------------------------------------------------------
-if active_page == '📊 Live Weather & Prediksi Shift':
-  st.subheader('🌐 Monitoring Live Telemetri Cuaca & Prediksi VIGV Trim')
+if active_page == 'Live Weather & Prediksi Ambient Temperature':
+  st.subheader('Monitoring Live Telemetri Cuaca & Prediksi VIGV Trim')
 
   st.markdown('<div class="weather-card">', unsafe_allow_html=True)
   wc1, wc2, wc3, wc4 = st.columns(4)
@@ -517,7 +513,7 @@ if active_page == '📊 Live Weather & Prediksi Shift':
           t_pred, load_mw_plan, rho_moist=rho_slot, mode_simulasi=True
       )
 
-      st.markdown(f'### 🕒 Slot {slot_name.split()[0]}')
+      st.markdown(f'### Slot {slot_name.split()[0]}')
       st.metric('Prediksi Temp Intake', f'{t_pred} °C')
       st.metric('Rekomendasi VIGV Trim', f'+{trim_p:.2f} °')
       st.caption(
@@ -527,7 +523,7 @@ if active_page == '📊 Live Weather & Prediksi Shift':
   if api_available and use_live_api:
     st.markdown('---')
     st.subheader(
-        '📊 Tabel Prediksi Cuaca Jam-Jaman PLTGU Priok (6 Jam Ke Depan)'
+        'Tabel Prediksi Cuaca PLTGU Priok (6 Jam Ke Depan)'
     )
     hourly_data = weather_json.get('hourly', {})
     df_hourly = pd.DataFrame({
@@ -557,7 +553,7 @@ if active_page == '📊 Live Weather & Prediksi Shift':
 
   # AI Prophet Forecasting
   st.markdown('---')
-  st.subheader('🤖 Local AI Weather Forecasting (Prophet Model 24 Jam)')
+  st.subheader('Local AI Weather Forecasting')
 
   df_ai_forecast = predict_weather_24h_prophet(
       m_temp_prophet, m_rh_prophet, input_temp_amb, input_rh_amb
@@ -615,7 +611,7 @@ if active_page == '📊 Live Weather & Prediksi Shift':
 
     st.plotly_chart(fig_ai, use_container_width=True)
 
-    with st.expander('🔍 Lihat Detail Tabel Prediksi Cuaca 24 Jam ML'):
+    with st.expander('Lihat Detail Tabel Prediksi Cuaca 24 Jam ML'):
       st.dataframe(df_ai_forecast, use_container_width=True)
   else:
     st.info(
@@ -626,7 +622,7 @@ if active_page == '📊 Live Weather & Prediksi Shift':
 # ------------------------------------------------------------------------------
 # HALAMAN 2: LIVE VERIFICATION & DCS SAFETY
 # ------------------------------------------------------------------------------
-elif active_page == '🎛️ Live Verification & DCS Interlock':
+elif active_page == 'Live Verification Parameter DCS':
   st.subheader('DCS Inputs & Protective Limit Monitor')
 
   col_d1, col_d2, col_d3 = st.columns([1.2, 1.2, 1.6])
