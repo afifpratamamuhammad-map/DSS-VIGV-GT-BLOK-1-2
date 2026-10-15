@@ -214,35 +214,34 @@ def fetch_priok_weather_api():
     except requests.exceptions.RequestException:
         return None
     return None
-
 # ==============================================================================
 # 5. SIDEBAR - NAVIGASI CLEAN UI & CONFIG
 # ==============================================================================
-st.sidebar.markdown("### Unit Selection")
+st.sidebar.markdown("### 🏢 Unit Selection")
 selected_unit = st.sidebar.selectbox(
     "Pilih Unit Turbin Gas:",
     ["GT 1.1", "GT 1.2", "GT 1.3", "GT 2.1", "GT 2.2", "GT 2.3"]
 )
 
 active_page = st.sidebar.radio(
-    "Navigasi Modul:",
+    "📍 Navigasi Modul:",
     [
-        "Live Weather & Prediksi Ambient Temperature",
-        "Live Verification Parameter DCS",
-        "What-If Analysis & Dynamic Simulation",
-        "Manfaat & Prediksi Filter Air Intake"
+        "📊 Live Weather & Prediksi Shift",
+        "🎛️ Live Verification & DCS Interlock",
+        "🔮 What-If Analysis & Dynamic Simulation",
+        "🛡️ Manfaat & Prediksi Filter RUL"
     ]
 )
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("### Fuel Selection Gas Turbine")
+st.sidebar.markdown("### ⛽ Parameter Pembangkit")
 fuel_mode = st.sidebar.radio(
     "Mode Bahan Bakar :",
     ("Gas Alam (Natural Gas)", "HSD (High Speed Diesel / Solar)")
 )
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("### Telemetri Stasiun Cuaca")
+st.sidebar.markdown("### 🌐 Telemetri Stasiun Cuaca")
 
 # Default Toggle ON
 use_live_api = st.sidebar.toggle("Gunakan Live API Cuaca Tanjung Priok", value=True)
@@ -261,9 +260,9 @@ if use_live_api:
         live_rh = curr_weather.get('relative_humidity_2m', 78.0)
         live_press = curr_weather.get('surface_pressure') or 1011.0
         api_connected = True
-        st.sidebar.success(f"API Terhubung (Lat: {LATITUDE}, Lon: {LONGITUDE})")
+        st.sidebar.success(f"🟢 API Terhubung (Lat: {LATITUDE}, Lon: {LONGITUDE})")
     else:
-        st.sidebar.warning("Gagal koneksi API. Menggunakan Mode Manual.")
+        st.sidebar.warning("⚠️ Gagal koneksi API. Menggunakan Mode Manual.")
 
 if not api_connected:
     input_temp_amb = st.sidebar.number_input("Temp Ambeien Manual (°C):", value=float(live_temp), step=0.1)
@@ -455,8 +454,8 @@ def create_performance_map(load_mw, pcd_bar, target_vigv):
 # ------------------------------------------------------------------------------
 # HALAMAN 1: LIVE WEATHER & PREDIKSI SHIFT
 # ------------------------------------------------------------------------------
-if active_page == 'Live Weather & Prediksi Ambient Temperature':
-  st.subheader('Monitoring Live Telemetri Cuaca & Prediksi VIGV Trim')
+if active_page == '📊 Live Weather & Prediksi Shift':
+  st.subheader('🌐 Monitoring Live Telemetri Cuaca & Prediksi VIGV Trim')
 
   st.markdown('<div class="weather-card">', unsafe_allow_html=True)
   wc1, wc2, wc3, wc4 = st.columns(4)
@@ -513,7 +512,7 @@ if active_page == 'Live Weather & Prediksi Ambient Temperature':
           t_pred, load_mw_plan, rho_moist=rho_slot, mode_simulasi=True
       )
 
-      st.markdown(f'### Slot {slot_name.split()[0]}')
+      st.markdown(f'### 🕒 Slot {slot_name.split()[0]}')
       st.metric('Prediksi Temp Intake', f'{t_pred} °C')
       st.metric('Rekomendasi VIGV Trim', f'+{trim_p:.2f} °')
       st.caption(
@@ -523,7 +522,7 @@ if active_page == 'Live Weather & Prediksi Ambient Temperature':
   if api_available and use_live_api:
     st.markdown('---')
     st.subheader(
-        'Tabel Prediksi Cuaca PLTGU Priok (6 Jam Ke Depan)'
+        '📊 Tabel Prediksi Cuaca Jam-Jaman PLTGU Priok (6 Jam Ke Depan)'
     )
     hourly_data = weather_json.get('hourly', {})
     df_hourly = pd.DataFrame({
@@ -553,7 +552,7 @@ if active_page == 'Live Weather & Prediksi Ambient Temperature':
 
   # AI Prophet Forecasting
   st.markdown('---')
-  st.subheader('Local AI Weather Forecasting')
+  st.subheader('🤖 Local AI Weather Forecasting (Prophet Model 24 Jam)')
 
   df_ai_forecast = predict_weather_24h_prophet(
       m_temp_prophet, m_rh_prophet, input_temp_amb, input_rh_amb
@@ -611,7 +610,7 @@ if active_page == 'Live Weather & Prediksi Ambient Temperature':
 
     st.plotly_chart(fig_ai, use_container_width=True)
 
-    with st.expander('Lihat Detail Tabel Prediksi Cuaca 24 Jam ML'):
+    with st.expander('🔍 Lihat Detail Tabel Prediksi Cuaca 24 Jam ML'):
       st.dataframe(df_ai_forecast, use_container_width=True)
   else:
     st.info(
@@ -622,94 +621,108 @@ if active_page == 'Live Weather & Prediksi Ambient Temperature':
 # ------------------------------------------------------------------------------
 # HALAMAN 2: LIVE VERIFICATION & DCS SAFETY
 # ------------------------------------------------------------------------------
-elif active_page == 'Live Verification Parameter DCS':
-  st.subheader('DCS Inputs & Protective Limit Monitor')
+elif active_page == '🎛️ Live Verification & DCS Interlock':
+    st.subheader('DCS Inputs & Protective Limit Monitor')
 
-  col_d1, col_d2, col_d3 = st.columns([1.2, 1.2, 1.6])
+    # 1. Inisialisasi nilai session_state jika belum ada
+    if 'dcs_set_point_load' not in st.session_state:
+        st.session_state.dcs_set_point_load = 0.0
+    if 'dcs_act_vigv' not in st.session_state:
+        st.session_state.dcs_act_vigv = 0.0
+    if 'dcs_fuel_cons' not in st.session_state:
+        st.session_state.dcs_fuel_cons = 0.0
+    if 'dcs_tat' not in st.session_state:
+        st.session_state.dcs_tat = 0.0
+    if 'dcs_tit' not in st.session_state:
+        st.session_state.dcs_tit = 0.0
+    if 'dcs_pcd' not in st.session_state:
+        st.session_state.dcs_pcd = 0.0
+    if 'dcs_pamb_mbar' not in st.session_state:
+        st.session_state.dcs_pamb_mbar = 0.0  # Set awal Ambient Pressure ke 0.0
+    if 'dcs_temp_intake' not in st.session_state:
+        st.session_state.dcs_temp_intake = 0.0  # Set awal Temp Intake DCS ke 0.0
 
-  with col_d1:
-    st.markdown('**1. Parameter Beban & Operasi GT (DCS):**')
-    dcs_set_point_load = st.number_input(
-        'Set Point Load (MW)', value=104.0, step=0.5
-    )
-    dcs_act_vigv = st.number_input(
-        'Actual VIGV Angle Saat Ini (°)', value=62.7, step=0.1
-    )
-    dcs_fuel_cons = st.number_input(
-        f'Fuel Consumption DCS ({fuel_unit})',
-        value=default_fuel_cons,
-        step=0.1,
-        format='%.2f',
-    )
-    dcs_tat = st.number_input('Exhaust Temp / TAT (°C)', value=498.0, step=0.1)
-    dcs_tit = st.number_input(
-        'Turbine Inlet Temp / TIT (°C)', value=1050.0, step=1.0
-    )
+    # Sinkronisasi otomatis telemetri API untuk RH saja
+    if 'dcs_rh_pct' not in st.session_state:
+        st.session_state.dcs_rh_pct = float(input_rh_amb)
 
-  with col_d2:
-    st.markdown('**2. Parameter Tekanan & Lingkungan DCS:**')
-    dcs_temp_intake = st.number_input(
-        'Temp Intake DCS (°C)', value=round(input_temp_amb + 1.2, 1), step=0.1
-    )
-    dcs_pcd = st.number_input(
-        'Comp Discharge Press / Pcd (bar)', value=11.2, step=0.1
-    )
-    dcs_pamb_mbar = st.number_input(
-        'Ambient Pressure / Pamb (mbar)',
-        value=float(input_pamb_mbar),
-        step=1.0,
-    )
-    dcs_rh_pct = st.number_input(
-        'Ambient Humidity / RH (%)', value=float(input_rh_amb), step=1.0
-    )
+    # 2. Fungsi Callback Reset Input
+    def reset_live_inputs():
+        # Ubah seluruh parameter masukan operator (termasuk Pamb dan Temp Intake) menjadi 0.0
+        st.session_state.dcs_set_point_load = 0.0
+        st.session_state.dcs_act_vigv = 0.0
+        st.session_state.dcs_fuel_cons = 0.0
+        st.session_state.dcs_tat = 0.0
+        st.session_state.dcs_tit = 0.0
+        st.session_state.dcs_pcd = 0.0
+        st.session_state.dcs_pamb_mbar = 0.0    # Reset Ambient Pressure ke 0.0
+        st.session_state.dcs_temp_intake = 0.0   # Reset Temp Intake ke 0.0
 
-  rho_live_dcs, _ = calculate_moist_air_density(
-      dcs_temp_intake, dcs_rh_pct, dcs_pamb_mbar
-  )
+        # Sinkronisasi otomatis ke nilai telemetri cuaca / API terbaru khusus RH saja
+        st.session_state.dcs_rh_pct = float(input_rh_amb)
 
-  trim_live, f_sav_live, rp_sav_live, co2_live, status_msg_live = (
-      calculate_vigv_trim(
-          dcs_temp_intake,
-          dcs_set_point_load,
-          act_vigv=dcs_act_vigv,
-          rho_moist=rho_live_dcs,
-          mode_simulasi=False,
-      )
-  )
-  target_vigv_live = dcs_act_vigv + trim_live
+    # Tombol Reset
+    col_btn1, col_btn2 = st.columns([1, 4])
+    with col_btn1:
+        st.button('🔄 Reset Parameter Input', on_click=reset_live_inputs, use_container_width=True)
 
-  tat_drop_pred = 2.5 * (trim_live / 2.0)
-  tit_drop_pred = 4.0 * (trim_live / 2.0)
-  pred_tat_after = dcs_tat - tat_drop_pred
-  pred_tit_after = dcs_tit - tit_drop_pred
-
-  with col_d3:
-    card_style = 'card-safe' if trim_live >= 0 else 'card-warn'
-    st.markdown(f'<div class="{card_style}">', unsafe_allow_html=True)
-    st.markdown('**💡 REKOMENDASI INPUT HMI DCS:**')
-
-    trim_sign = '+' if trim_live > 0 else ''
-    st.markdown(
-        f'<h2 style="color: #1E3A8A; margin:0;">Target Bias:'
-        f' {trim_sign}{trim_live:.2f}°</h2>',
-        unsafe_allow_html=True,
-    )
-    st.markdown(f'**Status Evaluasi:** `{status_msg_live}`')
-    st.markdown(
-        f'**Target Bukaan VIGV Akhir:** `{target_vigv_live:.2f}°` *(Saat Ini:'
-        f' {dcs_act_vigv:.1f}°)*'
-    )
     st.markdown('---')
-    st.markdown('**📈 PREDIKSI PARAMETER PASCA-TRIM (AFTER):**')
-    st.markdown(
-        f'• **Prediksi TAT After Trim:** `{pred_tat_after:.1f} °C` *(Estimasi'
-        f' Perubahan: {-tat_drop_pred:+.1f}°C)*'
+
+    col_d1, col_d2, col_d3 = st.columns([1.2, 1.2, 1.6])
+
+    with col_d1:
+        st.markdown('**1. Parameter Beban & Operasi GT (DCS):**')
+        dcs_set_point_load = st.number_input('Set Point Load (MW)', key='dcs_set_point_load', step=0.5)
+        dcs_act_vigv = st.number_input('Actual VIGV Angle Saat Ini (°)', key='dcs_act_vigv', step=0.1)
+        dcs_fuel_cons = st.number_input(f'Fuel Consumption DCS ({fuel_unit})', key='dcs_fuel_cons', step=0.1, format='%.2f')
+        dcs_tat = st.number_input('Exhaust Temp / TAT (°C)', key='dcs_tat', step=0.1)
+        dcs_tit = st.number_input('Turbine Inlet Temp / TIT (°C)', key='dcs_tit', step=1.0)
+
+    with col_d2:
+        st.markdown('**2. Parameter Tekanan & Lingkungan DCS:**')
+        dcs_temp_intake = st.number_input('Temp Intake DCS (°C)', key='dcs_temp_intake', step=0.1)
+        dcs_pcd = st.number_input('Comp Discharge Press / Pcd (bar)', key='dcs_pcd', step=0.1)
+        dcs_pamb_mbar = st.number_input('Ambient Pressure / Pamb (mbar)', key='dcs_pamb_mbar', step=1.0)
+        dcs_rh_pct = st.number_input('Ambient Humidity / RH (%)', key='dcs_rh_pct', step=1.0)
+
+    # Validasi jika Ambient Pressure atau Temp Intake bernilai 0
+    if dcs_pamb_mbar <= 0 or dcs_temp_intake <= 0:
+        rho_live_dcs = 1.165
+    else:
+        rho_live_dcs, _ = calculate_moist_air_density(dcs_temp_intake, dcs_rh_pct, dcs_pamb_mbar)
+
+    trim_live, f_sav_live, rp_sav_live, co2_live, status_msg_live = calculate_vigv_trim(
+        dcs_temp_intake,
+        dcs_set_point_load,
+        act_vigv=dcs_act_vigv,
+        rho_moist=rho_live_dcs,
+        mode_simulasi=False
     )
-    st.markdown(
-        f'• **Prediksi TIT After Trim:** `{pred_tit_after:.1f} °C` *(Estimasi'
-        f' Perubahan: {-tit_drop_pred:+.1f}°C)*'
-    )
-    st.markdown('</div>', unsafe_allow_html=True)
+    target_vigv_live = dcs_act_vigv + trim_live
+
+    tat_drop_pred = 2.5 * (trim_live / 2.0)
+    tit_drop_pred = 4.0 * (trim_live / 2.0)
+    pred_tat_after = dcs_tat - tat_drop_pred
+    pred_tit_after = dcs_tit - tit_drop_pred
+
+    with col_d3:
+        card_style = 'card-safe' if trim_live >= 0 else 'card-warn'
+        st.markdown(f'<div class="{card_style}">', unsafe_allow_html=True)
+        st.markdown('**💡 REKOMENDASI INPUT HMI DCS:**')
+
+        if dcs_set_point_load <= 0 or dcs_pamb_mbar <= 0 or dcs_temp_intake <= 0:
+            st.markdown('<h3 style="color: #64748B; margin:0;">WAITING OPERATOR INPUT</h3>', unsafe_allow_html=True)
+            st.caption('Silakan masukkan nilai Set Point Load, Temp Intake, dan Ambient Pressure dari DCS untuk melihat evaluasi.')
+        else:
+            trim_sign = '+' if trim_live > 0 else ''
+            st.markdown(f'<h2 style="color: #1E3A8A; margin:0;">Target Bias: {trim_sign}{trim_live:.2f}°</h2>', unsafe_allow_html=True)
+            st.markdown(f'**Status Evaluasi:** `{status_msg_live}`')
+            st.markdown(f'**Target Bukaan VIGV Akhir:** `{target_vigv_live:.2f}°` *(Saat Ini: {dcs_act_vigv:.1f}°)*')
+            st.markdown('---')
+            st.markdown('**📈 PREDIKSI PARAMETER PASCA-TRIM (AFTER):**')
+            st.markdown(f'• **Prediksi TAT After Trim:** `{pred_tat_after:.1f} °C` *(Estimasi Perubahan: {-tat_drop_pred:+.1f}°C)*')
+            st.markdown(f'• **Prediksi TIT After Trim:** `{pred_tit_after:.1f} °C` *(Estimasi Perubahan: {-tit_drop_pred:+.1f}°C)*')
+        st.markdown('</div>', unsafe_allow_html=True)
 
   st.markdown('---')
   st.subheader('Batas Keamanan Gas Turbine Real-Time')
@@ -780,6 +793,9 @@ elif active_page == 'Live Verification Parameter DCS':
 # ------------------------------------------------------------------------------
 # HALAMAN 3: WHAT-IF ANALYSIS & DYNAMIC SIMULATION
 # ------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
+# HALAMAN 3: WHAT-IF ANALYSIS & DYNAMIC SIMULATION
+# ------------------------------------------------------------------------------
 elif active_page == "🔮 What-If Analysis & Dynamic Simulation":
     st.subheader("🔮 Visual What-If Analysis & Dynamic Simulation")
     st.caption("Geser slider di bawah ini untuk mensimulasikan dampak fluktuasi beban dan suhu ambeien secara dinamis.")
@@ -812,7 +828,6 @@ elif active_page == "🔮 What-If Analysis & Dynamic Simulation":
         st.metric("Estimasi Hemat Biaya", f"Rp {sim_rpsav:,.0f} / jam")
         st.metric("Reduksi Emisi CO2", f"{sim_co2:.1f} kg CO2 / jam")
         st.markdown('</div>', unsafe_allow_html=True)
-
 # ------------------------------------------------------------------------------
 # HALAMAN 4: MANFAAT & PREDIKSI FILTER RUL
 # ------------------------------------------------------------------------------
