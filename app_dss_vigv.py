@@ -9,7 +9,7 @@ import requests
 import streamlit as st
 
 # ==============================================================================
-# 1. KONFIGURASI HALAMAN STREAMLIT & MODERN CLEAN UI STYLING
+# 1. KONFIGURASI HALAMAN STREAMLIT & INDUSTRIAL CONTROL ROOM STYLING
 # ==============================================================================
 st.set_page_config(
     page_title="DECISION SUPPORT SYSTEM GT BLOK 1-2 UBP PRIOK",
@@ -20,21 +20,104 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    .stApp { background-color: #F8FAFC; font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+    /* CSS Reset & Dark Modern Theme */
+    .stApp { 
+        background: #0B0F19; 
+        color: #E2E8F0;
+        font-family: 'Inter', system-ui, -apple-system, sans-serif; 
+    }
     
-    /* Breadcrumb Header Navigasi */
-    .breadcrumb-nav { font-size: 13px; color: #64748B; font-weight: 500; margin-bottom: 2px; }
-    .breadcrumb-nav span { color: #2563EB; font-weight: 600; }
-    .app-title { font-size: 24px; font-weight: 800; color: #0F172A; margin-bottom: 18px; letter-spacing: -0.5px; }
+    /* Header Navigasi & Status Bar */
+    .breadcrumb-nav { 
+        font-size: 12px; 
+        color: #64748B; 
+        font-weight: 600; 
+        letter-spacing: 1px; 
+        margin-bottom: 4px;
+    }
+    .breadcrumb-nav span { color: #38BDF8; font-weight: 700; }
     
-    /* Clean UI Custom Cards */
-    .card-safe { background-color: #F0FDF4; border-left: 6px solid #16A34A; padding: 16px; border-radius: 8px; margin-bottom: 12px; }
-    .card-warn { background-color: #FEFCE8; border-left: 6px solid #CA8A04; padding: 16px; border-radius: 8px; margin-bottom: 12px; }
-    .card-danger { background-color: #FEF2F2; border-left: 6px solid #DC2626; padding: 16px; border-radius: 8px; margin-bottom: 12px; }
-    .weather-card { background-color: #EFF6FF; border: 1px solid #BFDBFE; padding: 16px; border-radius: 8px; margin-bottom: 16px; }
+    .app-title { 
+        font-size: 24px; 
+        font-weight: 800; 
+        color: #F8FAFC; 
+        margin-bottom: 12px; 
+        letter-spacing: -0.5px;
+        background: linear-gradient(90deg, #F8FAFC 0%, #38BDF8 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
     
-    /* Sidebar Styling */
-    section[data-testid="stSidebar"] { background-color: #FFFFFF; border-right: 1px solid #E2E8F0; }
+    /* Indicator Live Status SCADA */
+    .live-status-bar {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        background: rgba(15, 23, 42, 0.9);
+        border: 1px solid rgba(56, 189, 248, 0.2);
+        padding: 10px 18px;
+        border-radius: 8px;
+        margin-bottom: 24px;
+    }
+    .status-dot-active {
+        width: 10px;
+        height: 10px;
+        background-color: #22C55E;
+        border-radius: 50%;
+        box-shadow: 0 0 10px #22C55E;
+    }
+    .status-dot-manual {
+        width: 10px;
+        height: 10px;
+        background-color: #EAB308;
+        border-radius: 50%;
+        box-shadow: 0 0 10px #EAB308;
+    }
+
+    /* Industrial Digital Cards (Glassmorphism Effect) */
+    .card-safe { 
+        background: linear-gradient(135deg, rgba(22, 163, 74, 0.08) 0%, rgba(15, 23, 42, 0.8) 100%); 
+        border: 1px solid rgba(34, 197, 94, 0.3); 
+        border-left: 5px solid #22C55E; 
+        padding: 18px; 
+        border-radius: 8px; 
+        margin-bottom: 16px;
+    }
+    .card-warn { 
+        background: linear-gradient(135deg, rgba(202, 138, 4, 0.08) 0%, rgba(15, 23, 42, 0.8) 100%); 
+        border: 1px solid rgba(234, 179, 8, 0.3); 
+        border-left: 5px solid #EAB308; 
+        padding: 18px; 
+        border-radius: 8px; 
+        margin-bottom: 16px;
+    }
+    .card-danger { 
+        background: linear-gradient(135deg, rgba(220, 38, 38, 0.08) 0%, rgba(15, 23, 42, 0.8) 100%); 
+        border: 1px solid rgba(239, 68, 68, 0.3); 
+        border-left: 5px solid #EF4444; 
+        padding: 18px; 
+        border-radius: 8px; 
+        margin-bottom: 16px;
+    }
+    .weather-card { 
+        background: rgba(15, 23, 42, 0.8); 
+        border: 1px solid rgba(56, 189, 248, 0.25); 
+        padding: 18px; 
+        border-radius: 8px; 
+        margin-bottom: 24px;
+    }
+
+    /* Sidebar Styling Refinement */
+    section[data-testid="stSidebar"] { 
+        background-color: #0F172A !important; 
+        border-right: 1px solid rgba(255, 255, 255, 0.08); 
+    }
+    
+    /* Style untuk Metric Streamlit */
+    div[data-testid="stMetricValue"] {
+        font-weight: 700 !important;
+        color: #38BDF8 !important;
+    }
     </style>
 """,
     unsafe_allow_html=True,
@@ -159,11 +242,11 @@ def calculate_vigv_trim(
         trim_target = float(np.clip(trim_calc, -2.0, 2.0))
 
         if trim_target > 0.1:
-            status_msg = 'UNDER-OPENED (Tercekik) ➔ Rekomendasi Trim NAIK (+)'
+            status_msg = 'UNDER-OPENED -> Rekomendasi Trim NAIK (+)'
         elif trim_target < -0.1:
-            status_msg = 'OVER-OPENED (Kelebihan) ➔ Rekomendasi Trim TURUN (-)'
+            status_msg = 'OVER-OPENED -> Rekomendasi Trim TURUN (-)'
         else:
-            status_msg = 'OPTIMAL ➔ Bukaan Sudut Sudah Pas'
+            status_msg = 'OPTIMAL -> Bukaan Sudut Sudah Pas'
 
     fuel_saved_h = base_saving_rate * (abs(trim_target) / 2.0)
     fin_saved_h = fuel_saved_h * price_per_unit
@@ -231,43 +314,43 @@ else:
 # ==============================================================================
 # 5. SIDEBAR - NAVIGASI CLEAN UI & CONFIG
 # ==============================================================================
-st.sidebar.markdown('### 🏢 Unit Selection')
+st.sidebar.markdown('### Unit Selection')
 selected_unit = st.sidebar.selectbox(
     'Pilih Unit Turbin Gas:',
     ['GT 1.1', 'GT 1.2', 'GT 1.3', 'GT 2.1', 'GT 2.2', 'GT 2.3'],
 )
 
 active_page = st.sidebar.radio(
-    '📍 Navigasi Modul:',
+    'Navigasi Modul:',
     [
-        '📊 Live Weather & Prediksi Shift',
-        '🎛️ Live Verification & DCS Interlock',
-        '🔮 What-If Analysis & Dynamic Simulation',
-        '🛡️ Manfaat & Prediksi Filter RUL',
+        'Live Weather & Prediksi Shift',
+        'Live Verification & DCS Interlock',
+        'What-If Analysis & Dynamic Simulation',
+        'Manfaat & Prediksi Filter RUL',
     ],
 )
 
 st.sidebar.markdown('---')
-st.sidebar.markdown('### ⛽ Parameter Pembangkit')
+st.sidebar.markdown('### Parameter Pembangkit')
 fuel_mode = st.sidebar.radio(
     'Mode Bahan Bakar :',
     ('Gas Alam (Natural Gas)', 'HSD (High Speed Diesel / Solar)'),
 )
 
 st.sidebar.markdown('---')
-st.sidebar.markdown('### 🌐 Telemetri Stasiun Cuaca')
+st.sidebar.markdown('### Telemetri Stasiun Cuaca')
 use_live_api = st.sidebar.toggle(
     'Gunakan Live API Cuaca Tanjung Priok', value=api_available
 )
 
 if use_live_api and api_available:
-    st.sidebar.success(f'🟢 API Terhubung (Lat: {LATITUDE}, Lon: {LONGITUDE})')
+    st.sidebar.success(f'API Terhubung (Lat: {LATITUDE}, Lon: {LONGITUDE})')
     input_temp_amb = live_temp
     input_rh_amb = live_rh
     input_pamb_mbar = live_press
 else:
     if not api_available and use_live_api:
-        st.sidebar.warning('⚠️ Gagal koneksi API. Menggunakan Mode Manual.')
+        st.sidebar.warning('Gagal koneksi API. Menggunakan Mode Manual.')
     input_temp_amb = st.sidebar.number_input(
         'Temp Ambeien Manual (°C):', value=31.5, step=0.1
     )
@@ -304,21 +387,33 @@ moist_density, vapor_press = calculate_moist_air_density(
     input_temp_amb, input_rh_amb, input_pamb_mbar
 )
 
-# RENDER HEADER BREADCRUMB
-page_name_clean = active_page.split(' ', 1)[1]
+# RENDER HEADER BREADCRUMB & DIGITAL STATUS BAR
+page_name_clean = active_page.upper()
 st.markdown(
-    f'<div class="breadcrumb-nav">PLTGU Priok / {selected_unit} /'
+    f'<div class="breadcrumb-nav">PLTGU PRIOK / {selected_unit} /'
     f' <span>{page_name_clean}</span></div>',
     unsafe_allow_html=True,
 )
 st.markdown(
-    f'<div class="app-title">DSS OPTIMIZATION — {selected_unit}</div>',
+    f'<div class="app-title">DECISION SUPPORT SYSTEM — {selected_unit}</div>',
     unsafe_allow_html=True,
 )
 
+status_dot_class = "status-dot-active" if (use_live_api and api_available) else "status-dot-manual"
+status_text = "DCS TELEMETRY & API STREAMING ACTIVE" if (use_live_api and api_available) else "MANUAL / SIMULATION MODE"
+
+st.markdown(
+    f"""
+    <div class="live-status-bar">
+        <div class="{status_dot_class}"></div>
+        <span style="font-size: 11px; font-weight: 700; color: #CBD5E1; letter-spacing: 1px;">SYSTEM STATUS: {status_text}</span>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
 
 # ==============================================================================
-# 6. FUNGSI GENERATOR GRAFIK PLOTLY INTERAKTIF
+# 6. FUNGSI GENERATOR GRAFIK PLOTLY INTERAKTIF (DARK THEME)
 # ==============================================================================
 def create_vigv_trend_chart(
     act_vigv, target_vigv, dcs_tat, pred_tat, dcs_tit, pred_tit
@@ -341,7 +436,7 @@ def create_vigv_trend_chart(
             textposition='auto',
             marker_color=[
                 '#64748B',
-                '#1E3A8A' if target_vigv >= act_vigv else '#D97706',
+                '#38BDF8' if target_vigv >= act_vigv else '#F59E0B',
             ],
             name='VIGV Angle',
         ),
@@ -380,10 +475,12 @@ def create_vigv_trend_chart(
         showlegend=True,
         barmode='group',
         margin=dict(l=20, r=20, t=40, b=20),
-        template='plotly_white',
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(15,23,42,0.6)',
+        font=dict(color='#E2E8F0'),
     )
-    fig.update_yaxes(title_text='Sudut (°)', row=1, col=1)
-    fig.update_yaxes(title_text='Temperatur (°C)', row=1, col=2)
+    fig.update_yaxes(title_text='Sudut (°)', row=1, col=1, gridcolor='rgba(255,255,255,0.05)')
+    fig.update_yaxes(title_text='Temperatur (°C)', row=1, col=2, gridcolor='rgba(255,255,255,0.05)')
 
     return fig
 
@@ -401,7 +498,7 @@ def create_performance_map(load_mw, pcd_bar, target_vigv):
             x=np.concatenate([loads, loads[::-1]]),
             y=np.concatenate([pcd_high, pcd_low[::-1]]),
             fill='toself',
-            fillcolor='rgba(219, 234, 254, 0.5)',
+            fillcolor='rgba(56, 189, 248, 0.1)',
             line=dict(color='rgba(255,255,255,0)'),
             hoverinfo='skip',
             name='Operating Envelope',
@@ -413,7 +510,7 @@ def create_performance_map(load_mw, pcd_bar, target_vigv):
             x=loads,
             y=pcd_opt,
             mode='lines',
-            line=dict(color='#2563EB', width=2, dash='dash'),
+            line=dict(color='#38BDF8', width=2, dash='dash'),
             name='Optimum VIGV Line',
         )
     )
@@ -425,9 +522,9 @@ def create_performance_map(load_mw, pcd_bar, target_vigv):
             mode='markers+text',
             marker=dict(
                 size=16,
-                color='#DC2626',
+                color='#EF4444',
                 symbol='cross-dot',
-                line=dict(width=2, color='black'),
+                line=dict(width=2, color='#FFFFFF'),
             ),
             text=[
                 f'  Current Operating Point ({load_mw:.1f} MW, {pcd_bar:.1f}'
@@ -444,11 +541,15 @@ def create_performance_map(load_mw, pcd_bar, target_vigv):
         yaxis_title='Pressure Discharge Compressor / Pcd (bar)',
         height=400,
         margin=dict(l=20, r=20, t=50, b=20),
-        template='plotly_white',
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(15,23,42,0.6)',
+        font=dict(color='#E2E8F0'),
         legend=dict(
             orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1
         ),
     )
+    fig.update_xaxes(gridcolor='rgba(255,255,255,0.05)')
+    fig.update_yaxes(gridcolor='rgba(255,255,255,0.05)')
 
     return fig
 
@@ -460,15 +561,15 @@ def create_performance_map(load_mw, pcd_bar, target_vigv):
 # ------------------------------------------------------------------------------
 # HALAMAN 1: LIVE WEATHER & PREDIKSI SHIFT
 # ------------------------------------------------------------------------------
-if active_page == '📊 Live Weather & Prediksi Shift':
-    st.subheader('🌐 Monitoring Live Telemetri Cuaca & Prediksi VIGV Trim')
+if active_page == 'Live Weather & Prediksi Shift':
+    st.subheader('Telemetri Stasiun Cuaca Real-Time & Prediksi VIGV Shift')
 
     st.markdown('<div class="weather-card">', unsafe_allow_html=True)
     wc1, wc2, wc3, wc4 = st.columns(4)
     wc1.metric(
         'Suhu Ambeien (Tamb)',
         f'{input_temp_amb:.1f} °C',
-        delta='Live API Open-Meteo' if use_live_api else 'Manual',
+        delta='Live API Open-Meteo' if use_live_api else 'Manual Mode',
     )
     wc2.metric(
         'Kelembapan Relatif (RH)',
@@ -519,7 +620,7 @@ if active_page == '📊 Live Weather & Prediksi Shift':
                 base_saving_rate=base_saving_rate, price_per_unit=price_per_unit, co2_factor=co2_factor
             )
 
-            st.markdown(f'### 🕒 Slot {slot_name.split()[0]}')
+            st.markdown(f'### Slot {slot_name.split()[0]}')
             st.metric('Prediksi Temp Intake', f'{t_pred} °C')
             st.metric('Rekomendasi VIGV Trim', f'+{trim_p:.2f} °')
             st.caption(
@@ -529,7 +630,7 @@ if active_page == '📊 Live Weather & Prediksi Shift':
     if api_available and use_live_api:
         st.markdown('---')
         st.subheader(
-            '📊 Tabel Prediksi Cuaca Jam-Jaman PLTGU Priok (6 Jam Ke Depan)'
+            'Tabel Prediksi Cuaca Jam-Jaman PLTGU Priok (6 Jam Ke Depan)'
         )
         hourly_data = weather_json.get('hourly', {})
         df_hourly = pd.DataFrame({
@@ -562,7 +663,7 @@ if active_page == '📊 Live Weather & Prediksi Shift':
 
     # AI Prophet Forecasting
     st.markdown('---')
-    st.subheader('🤖 Local AI Weather Forecasting (Prophet Model 24 Jam)')
+    st.subheader('Local AI Weather Forecasting (Prophet Model 24 Jam)')
 
     df_ai_forecast = predict_weather_24h_prophet(
         m_temp_prophet, m_rh_prophet, input_temp_amb, input_rh_amb
@@ -602,7 +703,7 @@ if active_page == '📊 Live Weather & Prediksi Shift':
                 x=df_ai_forecast['Waktu'],
                 y=df_ai_forecast['Target_VIGV_Trim_°'],
                 name='Rekomendasi VIGV Trim (°)',
-                line=dict(color='#2563EB', width=2, dash='dash'),
+                line=dict(color='#38BDF8', width=2, dash='dash'),
                 yaxis='y2',
             )
         )
@@ -618,23 +719,25 @@ if active_page == '📊 Live Weather & Prediksi Shift':
                 range=[0, 2.5],
             ),
             height=380,
-            template='plotly_white',
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(15,23,42,0.6)',
+            font=dict(color='#E2E8F0'),
         )
 
         st.plotly_chart(fig_ai, use_container_width=True)
 
-        with st.expander('🔍 Lihat Detail Tabel Prediksi Cuaca 24 Jam ML'):
+        with st.expander('Lihat Detail Tabel Prediksi Cuaca 24 Jam ML'):
             st.dataframe(df_ai_forecast, use_container_width=True)
     else:
         st.info(
-            '💡 Model `.pkl` lokal belum diunggah ke repositori GitHub. Tampilan saat'
+            'Model .pkl lokal belum diunggah ke repositori. Tampilan saat'
             ' ini menggunakan Live API standar.'
         )
 
 # ------------------------------------------------------------------------------
 # HALAMAN 2: LIVE VERIFICATION & DCS SAFETY
 # ------------------------------------------------------------------------------
-elif active_page == '🎛️ Live Verification & DCS Interlock':
+elif active_page == 'Live Verification & DCS Interlock':
     st.subheader('DCS Inputs & Protective Limit Monitor')
 
     # 1. Inisialisasi nilai session_state jika belum ada
@@ -674,7 +777,7 @@ elif active_page == '🎛️ Live Verification & DCS Interlock':
     # Tombol Reset
     col_btn1, col_btn2 = st.columns([1, 4])
     with col_btn1:
-        st.button('🔄 Reset Parameter Input', on_click=reset_live_inputs, use_container_width=True)
+        st.button('Reset Parameter Input', on_click=reset_live_inputs, use_container_width=True)
 
     st.markdown('---')
 
@@ -721,18 +824,18 @@ elif active_page == '🎛️ Live Verification & DCS Interlock':
     with col_d3:
         card_style = 'card-safe' if trim_live >= 0 else 'card-warn'
         st.markdown(f'<div class="{card_style}">', unsafe_allow_html=True)
-        st.markdown('**💡 REKOMENDASI INPUT HMI DCS:**')
+        st.markdown('**REKOMENDASI INPUT HMI DCS:**')
 
         if dcs_set_point_load <= 0 or dcs_pamb_mbar <= 0 or dcs_temp_intake <= 0:
-            st.markdown('<h3 style="color: #64748B; margin:0;">WAITING OPERATOR INPUT</h3>', unsafe_allow_html=True)
+            st.markdown('<h3 style="color: #94A3B8; margin:0;">WAITING OPERATOR INPUT</h3>', unsafe_allow_html=True)
             st.caption('Silakan masukkan nilai Set Point Load, Temp Intake, dan Ambient Pressure dari DCS untuk melihat evaluasi.')
         else:
             trim_sign = '+' if trim_live > 0 else ''
-            st.markdown(f'<h2 style="color: #1E3A8A; margin:0;">Target Bias: {trim_sign}{trim_live:.2f}°</h2>', unsafe_allow_html=True)
+            st.markdown(f'<h2 style="color: #38BDF8; margin:0;">Target Bias: {trim_sign}{trim_live:.2f}°</h2>', unsafe_allow_html=True)
             st.markdown(f'**Status Evaluasi:** `{status_msg_live}`')
             st.markdown(f'**Target Bukaan VIGV Akhir:** `{target_vigv_live:.2f}°` *(Saat Ini: {dcs_act_vigv:.1f}°)*')
             st.markdown('---')
-            st.markdown('**📈 PREDIKSI PARAMETER PASCA-TRIM (AFTER):**')
+            st.markdown('**PREDIKSI PARAMETER PASCA-TRIM (AFTER):**')
             st.markdown(f'• **Prediksi TAT After Trim:** `{pred_tat_after:.1f} °C` *(Estimasi Perubahan: {-tat_drop_pred:+.1f}°C)*')
             st.markdown(f'• **Prediksi TIT After Trim:** `{pred_tit_after:.1f} °C` *(Estimasi Perubahan: {-tit_drop_pred:+.1f}°C)*')
         st.markdown('</div>', unsafe_allow_html=True)
@@ -745,45 +848,45 @@ elif active_page == '🎛️ Live Verification & DCS Interlock':
     with e_col1:
         st.markdown('**Status VIGV Angle**')
         if target_vigv_live < 45.0:
-            st.error(f'🚨 **TRIP CRITICAL!** VIGV < 45° ({target_vigv_live:.1f}°)')
+            st.error(f'TRIP CRITICAL! VIGV < 45° ({target_vigv_live:.1f}°)')
         elif dcs_set_point_load <= 70.0 and (47.0 <= target_vigv_live <= 48.0):
-            st.info(f'ℹ️ Standby Mode (0-70 MW): VIGV {target_vigv_live:.1f}°')
+            st.info(f'Standby Mode (0-70 MW): VIGV {target_vigv_live:.1f}°')
         elif dcs_set_point_load > 120.0 and target_vigv_live >= 72.0:
-            st.warning('⚠️ Base Load (>120 MW): Max Limit 72° REACHED')
+            st.warning('Base Load (>120 MW): Max Limit 72° REACHED')
         else:
-            st.success(f'✅ Normal Angle: {target_vigv_live:.1f}° (Safe)')
+            st.success(f'Normal Angle: {target_vigv_live:.1f}° (Safe)')
 
     with e_col2:
         st.markdown('**Status TAT Exhaust**')
         if dcs_tat >= 575.0:
-            st.error(f'🚨 **TRIP TAT!** ({dcs_tat:.1f}°C ≥ 575°C)')
+            st.error(f'TRIP TAT! ({dcs_tat:.1f}°C >= 575°C)')
         elif dcs_tat >= 565.0:
-            st.warning(f'⚠️ **ALARM TAT!** ({dcs_tat:.1f}°C ≥ 565°C)')
+            st.warning(f'ALARM TAT! ({dcs_tat:.1f}°C >= 565°C)')
         else:
-            st.success(f'✅ Safe Margin: +{575.0 - pred_tat_after:.1f}°C to Trip')
+            st.success(f'Safe Margin: +{575.0 - pred_tat_after:.1f}°C to Trip')
 
     with e_col3:
         st.markdown('**Status TIT Inlet**')
         if dcs_tit >= 1130.0:
-            st.error(f'🚨 **TRIP TIT!** ({dcs_tit:.1f}°C ≥ 1130°C)')
+            st.error(f'TRIP TIT! ({dcs_tit:.1f}°C >= 1130°C)')
         elif dcs_tit >= 1120.0:
-            st.warning(f'⚠️ **ALARM TIT!** ({dcs_tit:.1f}°C ≥ 1120°C)')
+            st.warning(f'ALARM TIT! ({dcs_tit:.1f}°C >= 1120°C)')
         else:
-            st.success(f'✅ Safe Margin: +{1130.0 - pred_tit_after:.1f}°C to Trip')
+            st.success(f'Safe Margin: +{1130.0 - pred_tit_after:.1f}°C to Trip')
 
     with e_col4:
         st.markdown('**Status Press Discharge Compressor**')
         if dcs_pcd >= 13.5:
-            st.warning(f'⚠️ **ALARM SURGE Pcd!** ({dcs_pcd:.1f} bar ≥ 13.5 bar)')
+            st.warning(f'ALARM SURGE Pcd! ({dcs_pcd:.1f} bar >= 13.5 bar)')
         else:
-            st.success(f'✅ Pcd Normal ({dcs_pcd:.1f} bar)')
+            st.success(f'Pcd Normal ({dcs_pcd:.1f} bar)')
 
     st.markdown('---')
-    st.subheader('📊 Visualisasi Trend & Peta Efisiensi GT13E1 Real-Time')
+    st.subheader('Visualisasi Trend & Peta Efisiensi GT13E1 Real-Time')
 
     chart_tab1, chart_tab2 = st.tabs([
-        '📈 Trend VIGV & Respon Suhu',
-        '🗺️ Peta Efisiensi Operasi (Performance Map)',
+        'Trend VIGV & Respon Suhu',
+        'Peta Efisiensi Operasi (Performance Map)',
     ])
 
     with chart_tab1:
@@ -806,14 +909,13 @@ elif active_page == '🎛️ Live Verification & DCS Interlock':
 # ------------------------------------------------------------------------------
 # HALAMAN 3: WHAT-IF ANALYSIS & DYNAMIC SIMULATION
 # ------------------------------------------------------------------------------
-elif active_page == '🔮 What-If Analysis & Dynamic Simulation':
-    st.subheader('🔮 Visual What-If Analysis & Dynamic Simulation')
+elif active_page == 'What-If Analysis & Dynamic Simulation':
+    st.subheader('Visual What-If Analysis & Dynamic Simulation')
     st.caption(
         'Simulasi multi-parameter interaktif untuk memprediksi sudut VIGV, peta kinerja, '
         'dan estimasi laju aliran massa udara (Air Mass Flow) ke turbin gas.'
     )
 
-    # Grid Slider Input Parameter Simulasi (4 Parameter Utama)
     s_col1, s_col2 = st.columns(2)
     with s_col1:
         sim_mw = st.slider('Simulasi Beban Generator (MW)', 40.0, 140.0, 104.0, step=1.0)
@@ -821,15 +923,11 @@ elif active_page == '🔮 What-If Analysis & Dynamic Simulation':
     
     with s_col2:
         sim_pamb = st.slider('Simulasi Ambient Pressure / Pamb (mbar)', 990.0, 1030.0, 1011.0, step=1.0)
-        
-        # Default Pcd otomatis menyesuaikan beban jika belum digeser
         default_pcd_calc = round((sim_mw / 150.0) * 13.0 + 1.8, 1)
         sim_pcd_input = st.slider('Simulasi Press Discharge Comp / Pcd (bar)', 5.0, 15.0, default_pcd_calc, step=0.1)
 
-    # 1. Hitung Kerapatan Udara Basah Psikrometrik
     sim_rho, _ = calculate_moist_air_density(sim_temp, 75.0, sim_pamb)
 
-    # 2. Hitung VIGV Trim & Angle Optimal
     sim_trim, sim_fsav, sim_rpsav, sim_co2, _ = calculate_vigv_trim(
         sim_temp, sim_mw, rho_moist=sim_rho, mode_simulasi=True,
         base_saving_rate=base_saving_rate, price_per_unit=price_per_unit, co2_factor=co2_factor
@@ -837,23 +935,18 @@ elif active_page == '🔮 What-If Analysis & Dynamic Simulation':
     sim_base_ideal_angle = 45.0 + (sim_mw / 120.0) * 20.0
     sim_optimal_angle = sim_base_ideal_angle + sim_trim
 
-    # 3. Hitung Estimasi Air Mass Flow (Laju Aliran Massa Udara)
-    # Laju volume nominal GT13E1 ~ 395 m3/s pada ISO Condition
     base_volumetric_flow = 395.0  # m3/s
     pamb_bar = sim_pamb / 1000.0
     pressure_ratio = sim_pcd_input / pamb_bar if pamb_bar > 0 else 11.0
     
-    # Koreksi rasio bukaan VIGV dan koreksi tekanan
     vigv_ratio = sim_optimal_angle / 65.0
     pr_correction = math.sqrt(pressure_ratio / 11.0)
     
     air_flow_kg_s = base_volumetric_flow * sim_rho * vigv_ratio * pr_correction
     air_flow_ton_h = (air_flow_kg_s * 3600.0) / 1000.0
 
-    # 4. Generate Performance Map Visual
     fig_sim = create_performance_map(sim_mw, sim_pcd_input, sim_trim)
 
-    # Tampilan Hasil Evaluasi
     res1, res2 = st.columns([1.4, 1])
     with res1:
         st.plotly_chart(fig_sim, use_container_width=True)
@@ -862,7 +955,6 @@ elif active_page == '🔮 What-If Analysis & Dynamic Simulation':
         st.markdown('<div class="card-safe">', unsafe_allow_html=True)
         st.markdown('#### Hasil Evaluasi Dynamic What-If')
         
-        # Metric Air Mass Flow Utama
         st.metric('Estimasi Flow Udara Intake', f'{air_flow_kg_s:.1f} kg/s', delta=f'{air_flow_ton_h:.0f} Ton / jam')
         st.markdown('---')
         
@@ -872,10 +964,11 @@ elif active_page == '🔮 What-If Analysis & Dynamic Simulation':
         st.metric('Estimasi Hemat Biaya', f'Rp {sim_rpsav:,.0f} / jam')
         st.metric('Reduksi Emisi CO2', f'{sim_co2:.1f} kg CO2 / jam')
         st.markdown('</div>', unsafe_allow_html=True)
+
 # ------------------------------------------------------------------------------
 # HALAMAN 4: MANFAAT & PREDIKSI FILTER RUL
 # ------------------------------------------------------------------------------
-elif active_page == '🛡️ Manfaat & Prediksi Filter RUL':
+elif active_page == 'Manfaat & Prediksi Filter RUL':
     dcs_set_point_load = 104.0
     dcs_act_vigv = 62.7
     dcs_fuel_cons = default_fuel_cons
@@ -990,19 +1083,19 @@ elif active_page == '🛡️ Manfaat & Prediksi Filter RUL':
         st.markdown('**Evaluasi & Rekomendasi Pemeliharaan:**')
         if virtual_dp_filter_bar >= dp_replace_limit_bar:
             st.error(
-                '🚨 **CRITICAL REPLACE!** Estimated DP ≥ 0,019 bar'
+                'CRITICAL REPLACE! Estimated DP >= 0,019 bar'
                 f' ({virtual_dp_mbar:.1f} mbar). Filter kotor, jadwalkan'
                 ' penggantian segera!'
             )
         elif virtual_dp_filter_bar >= dp_warning_limit_bar:
             st.warning(
-                '⚠️ **WARNING:** Estimated DP ≥ 0,015 bar'
+                'WARNING: Estimated DP >= 0,015 bar'
                 f' ({virtual_dp_mbar:.1f} mbar). Penumpukan debu meningkat, siapkan'
                 ' stok filter.'
             )
         else:
             st.success(
-                '🟢 **FILTER CLEAN:** Estimated DP < 0,015 bar'
+                'FILTER CLEAN: Estimated DP < 0,015 bar'
                 f' ({virtual_dp_mbar:.1f} mbar). Kondisi aliran intake bersih &'
                 ' optimal.'
             )
