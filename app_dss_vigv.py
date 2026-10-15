@@ -809,42 +809,69 @@ elif active_page == '🎛️ Live Verification & DCS Interlock':
 elif active_page == '🔮 What-If Analysis & Dynamic Simulation':
     st.subheader('🔮 Visual What-If Analysis & Dynamic Simulation')
     st.caption(
-        'Geser slider di bawah ini untuk mensimulasikan dampak fluktuasi beban dan'
-        ' suhu ambeien secara dinamis.'
+        'Simulasi multi-parameter interaktif untuk memprediksi sudut VIGV, peta kinerja, '
+        'dan estimasi laju aliran massa udara (Air Mass Flow) ke turbin gas.'
     )
 
-    sim_col1, sim_col2 = st.columns(2)
-    sim_mw = sim_col1.slider('Simulasi Beban Generator (MW)', 40.0, 140.0, 104.0)
-    sim_temp = sim_col2.slider(
-        'Simulasi Perubahan Suhu Intake (°C)', 20.0, 40.0, 32.5
-    )
+    # Grid Slider Input Parameter Simulasi (4 Parameter Utama)
+    s_col1, s_col2 = st.columns(2)
+    with s_col1:
+        sim_mw = st.slider('Simulasi Beban Generator (MW)', 40.0, 140.0, 104.0, step=1.0)
+        sim_temp = st.slider('Simulasi Suhu Intake (°C)', 20.0, 40.0, 32.5, step=0.5)
+    
+    with s_col2:
+        sim_pamb = st.slider('Simulasi Ambient Pressure / Pamb (mbar)', 990.0, 1030.0, 1011.0, step=1.0)
+        
+        # Default Pcd otomatis menyesuaikan beban jika belum digeser
+        default_pcd_calc = round((sim_mw / 150.0) * 13.0 + 1.8, 1)
+        sim_pcd_input = st.slider('Simulasi Press Discharge Comp / Pcd (bar)', 5.0, 15.0, default_pcd_calc, step=0.1)
 
-    sim_rho, _ = calculate_moist_air_density(sim_temp, 75.0, 1011.0)
+    # 1. Hitung Kerapatan Udara Basah Psikrometrik
+    sim_rho, _ = calculate_moist_air_density(sim_temp, 75.0, sim_pamb)
+
+    # 2. Hitung VIGV Trim & Angle Optimal
     sim_trim, sim_fsav, sim_rpsav, sim_co2, _ = calculate_vigv_trim(
         sim_temp, sim_mw, rho_moist=sim_rho, mode_simulasi=True,
         base_saving_rate=base_saving_rate, price_per_unit=price_per_unit, co2_factor=co2_factor
     )
-
-    # Kalkulasi Bukaan Sudut VIGV Optimal (Base Ideal + Trim)
     sim_base_ideal_angle = 45.0 + (sim_mw / 120.0) * 20.0
     sim_optimal_angle = sim_base_ideal_angle + sim_trim
 
-    sim_pcd = (sim_mw / 150.0) * 13.0 + 1.8 + (sim_trim * 0.1)
-    fig_sim = create_performance_map(sim_mw, sim_pcd, sim_trim)
+    # 3. Hitung Estimasi Air Mass Flow (Laju Aliran Massa Udara)
+    # Laju volume nominal GT13E1 ~ 395 m3/s pada ISO Condition
+    base_volumetric_flow = 395.0  # m3/s
+    pamb_bar = sim_pamb / 1000.0
+    pressure_ratio = sim_pcd_input / pamb_bar if pamb_bar > 0 else 11.0
+    
+    # Koreksi rasio bukaan VIGV dan koreksi tekanan
+    vigv_ratio = sim_optimal_angle / 65.0
+    pr_correction = math.sqrt(pressure_ratio / 11.0)
+    
+    air_flow_kg_s = base_volumetric_flow * sim_rho * vigv_ratio * pr_correction
+    air_flow_ton_h = (air_flow_kg_s * 3600.0) / 1000.0
 
-    res1, res2 = st.columns([1.5, 1])
+    # 4. Generate Performance Map Visual
+    fig_sim = create_performance_map(sim_mw, sim_pcd_input, sim_trim)
+
+    # Tampilan Hasil Evaluasi
+    res1, res2 = st.columns([1.4, 1])
     with res1:
         st.plotly_chart(fig_sim, use_container_width=True)
+        
     with res2:
         st.markdown('<div class="card-safe">', unsafe_allow_html=True)
         st.markdown('#### Hasil Evaluasi Dynamic What-If')
+        
+        # Metric Air Mass Flow Utama
+        st.metric('Estimasi Flow Udara Intake', f'{air_flow_kg_s:.1f} kg/s', delta=f'{air_flow_ton_h:.0f} Ton / jam')
+        st.markdown('---')
+        
         st.metric('Rekomendasi VIGV Trim', f'+{sim_trim:.2f} °')
         st.metric('Sudut VIGV Optimal', f'{sim_optimal_angle:.2f} °', delta=f'+{sim_trim:.2f}° dari Baseline')
         st.metric('Estimasi Hemat BBM', f'{sim_fsav:.3f} {fuel_unit}')
         st.metric('Estimasi Hemat Biaya', f'Rp {sim_rpsav:,.0f} / jam')
         st.metric('Reduksi Emisi CO2', f'{sim_co2:.1f} kg CO2 / jam')
         st.markdown('</div>', unsafe_allow_html=True)
-
 # ------------------------------------------------------------------------------
 # HALAMAN 4: MANFAAT & PREDIKSI FILTER RUL
 # ------------------------------------------------------------------------------
