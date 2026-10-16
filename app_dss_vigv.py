@@ -221,7 +221,7 @@ def predict_weather_24h_prophet(m_temp, m_rh, anchor_temp, anchor_rh):
 
 
 # ==============================================================================
-# 3. FUNGSI PERHITUNGAN FISIKA UDARA BASAH & VIGV TRIM
+# 3. FUNGSI PERHITUNGAN FISIKA UDARA BASAH & VIGV TRIM (6 RETURN VALUES)
 # ==============================================================================
 def calculate_moist_air_density(temp_c, rh_pct, press_mbar):
     """Kalkulasi Kerapatan Udara Basah (Moist Air Density - kg/m³)"""
@@ -246,8 +246,9 @@ def calculate_moist_air_density(temp_c, rh_pct, press_mbar):
 def calculate_vigv_trim(
     t_intake, load_mw, act_vigv=62.7, rho_moist=1.165, mode_simulasi=False,
     base_saving_rate=0.247, price_per_unit=4025000.0, co2_factor=1980.0,
-    step_rounding=0.5  # Konfigurasi pembulatan presisi DCS (0.5°)
+    step_rounding=0.5
 ):
+    """Kalkulasi VIGV Trim Otomatis 2-Arah Berbasis Koreksi Proporsional Dinamis."""
     if load_mw <= 0:
         return 0.0, 0.0, 0.0, 0.0, 0.0, 'UNIT OFFLINE'
 
@@ -279,19 +280,19 @@ def calculate_vigv_trim(
             status_msg = 'OPTIMAL -> Bukaan Sudut Sudah Pas'
 
     # Pembulatan khusus untuk eksekusi HMI DCS (Step 0.5°)
-    trim_rounded = round(trim_calc / step_rounding) * step_rounding
+    trim_rounded = round(trim_calc / step_rounding) * step_rounding if step_rounding > 0 else trim_calc
 
     fuel_saved_h = base_saving_rate * (abs(trim_rounded) / 2.0)
     fin_saved_h = fuel_saved_h * price_per_unit
     co2_red_h = fuel_saved_h * co2_factor
 
     return (
-        round(trim_calc, 2),     # Presisi Eksak (Teoritis)
-        round(trim_rounded, 1),  # Presisi DCS (Siap Eksekusi)
-        round(fuel_saved_h, 3),
-        round(fin_saved_h, 0),
-        round(co2_red_h, 1),
-        status_msg,
+        round(trim_calc, 2),     # 1. Presisi Eksak
+        round(trim_rounded, 1),  # 2. Presisi HMI DCS (Kelipatan 0.5°)
+        round(fuel_saved_h, 3),  # 3. Hemat BB
+        round(fin_saved_h, 0),   # 4. Hemat Rp
+        round(co2_red_h, 1),     # 5. Reduksi CO2
+        status_msg,              # 6. Status Text
     )
 
 
@@ -466,7 +467,7 @@ def create_vigv_trend_chart(
         go.Bar(
             x=['Actual VIGV (DCS)', 'Target VIGV (DSS)'],
             y=[act_vigv, target_vigv],
-            text=[f'{act_vigv:.1f}°', f'{target_vigv:.2f}°'],
+            text=[f'{act_vigv:.1f}°', f'{target_vigv:.1f}°'],
             textposition='auto',
             marker_color=[
                 '#64748B',
@@ -650,14 +651,14 @@ if active_page == 'Live Weather & Prediksi Shift':
             rho_slot, _ = calculate_moist_air_density(
                 t_pred, input_rh_amb, input_pamb_mbar
             )
-            trim_p, f_sav_p, rp_sav_p, co2_p, _ = calculate_vigv_trim(
+            _, trim_p, f_sav_p, rp_sav_p, co2_p, _ = calculate_vigv_trim(
                 t_pred, load_mw_plan, rho_moist=rho_slot, mode_simulasi=True,
                 base_saving_rate=base_saving_rate, price_per_unit=price_per_unit, co2_factor=co2_factor
             )
 
             st.markdown(f'### Slot {slot_name.split()[0]}')
             st.metric('Prediksi Temp Intake', f'{t_pred} °C')
-            st.metric('Rekomendasi VIGV Trim', f'+{trim_p:.2f} °')
+            st.metric('Rekomendasi VIGV Trim', f'+{trim_p:.1f} °')
             st.caption(
                 f'Est. Hemat: {f_sav_p:.3f} {fuel_unit} (Rp {rp_sav_p:,.0f}/jam)'
             )
@@ -689,7 +690,7 @@ if active_page == 'Live Weather & Prediksi Shift':
                 base_saving_rate=base_saving_rate,
                 price_per_unit=price_per_unit,
                 co2_factor=co2_factor,
-            )[0]
+            )[1]
 
         df_hourly['Target_VIGV_Trim_°'] = df_hourly.apply(
             get_trim_from_row, axis=1
@@ -718,7 +719,7 @@ if active_page == 'Live Weather & Prediksi Shift':
                 base_saving_rate=base_saving_rate,
                 price_per_unit=price_per_unit,
                 co2_factor=co2_factor,
-            )[0]
+            )[1]
 
         df_ai_forecast['Target_VIGV_Trim_°'] = df_ai_forecast.apply(
             calc_trim_row_ai, axis=1
@@ -828,7 +829,7 @@ elif active_page == 'Live Verification & DCS Interlock':
         base_saving_rate=base_saving_rate,
         price_per_unit=price_per_unit,
         co2_factor=co2_factor,
-        step_rounding=0.5  # Step pembulatan 0.5° khusus HMI DCS
+        step_rounding=0.5
     )
 
     target_vigv_exact = dcs_act_vigv + trim_exact
@@ -849,7 +850,6 @@ elif active_page == 'Live Verification & DCS Interlock':
             st.caption('Silakan masukkan nilai Set Point Load, Temp Intake, dan Ambient Pressure dari DCS untuk melihat evaluasi.')
         else:
             trim_sign = '+' if trim_dcs > 0 else ''
-            # Tampilan Utama: Nilai Siap Input HMI DCS (Kelipatan 0.5°)
             st.markdown(f'<h2 style="color: #38BDF8; margin:0;">Target Bias DCS: {trim_sign}{trim_dcs:.1f}°</h2>', unsafe_allow_html=True)
             st.markdown(f'**Target Bukaan VIGV (Input HMI):** `{target_vigv_dcs:.1f}°` *(Saat Ini: {dcs_act_vigv:.1f}°)*')
             st.caption(f'Presisi Kalkulasi Fisika: Bias {trim_exact:+.2f}° (Target Ideal: {target_vigv_exact:.2f}°)')
@@ -960,7 +960,7 @@ elif active_page == 'What-If Analysis & Dynamic Simulation':
 
     sim_rho, _ = calculate_moist_air_density(sim_temp, 75.0, sim_pamb)
 
-    sim_trim, sim_fsav, sim_rpsav, sim_co2, _ = calculate_vigv_trim(
+    _, sim_trim, sim_fsav, sim_rpsav, sim_co2, _ = calculate_vigv_trim(
         sim_temp, sim_mw, rho_moist=sim_rho, mode_simulasi=True,
         base_saving_rate=base_saving_rate, price_per_unit=price_per_unit, co2_factor=co2_factor
     )
@@ -990,8 +990,8 @@ elif active_page == 'What-If Analysis & Dynamic Simulation':
         st.metric('Estimasi Flow Udara Intake', f'{air_flow_kg_s:.1f} kg/s', delta=f'{air_flow_ton_h:.0f} Ton / jam')
         st.markdown('---')
         
-        st.metric('Rekomendasi VIGV Trim', f'+{sim_trim:.2f} °')
-        st.metric('Sudut VIGV Optimal', f'{sim_optimal_angle:.2f} °', delta=f'+{sim_trim:.2f}° dari Baseline')
+        st.metric('Rekomendasi VIGV Trim', f'+{sim_trim:.1f} °')
+        st.metric('Sudut VIGV Optimal', f'{sim_optimal_angle:.1f} °', delta=f'+{sim_trim:.1f}° dari Baseline')
         st.metric('Estimasi Hemat BBM', f'{sim_fsav:.3f} {fuel_unit}')
         st.metric('Estimasi Hemat Biaya', f'Rp {sim_rpsav:,.0f} / jam')
         st.metric('Reduksi Emisi CO2', f'{sim_co2:.1f} kg CO2 / jam')
@@ -1013,7 +1013,7 @@ elif active_page == 'Manfaat & Prediksi Filter RUL':
     rho_live_dcs, _ = calculate_moist_air_density(
         dcs_temp_intake, dcs_rh_pct, dcs_pamb_mbar
     )
-    trim_live, f_sav_live, rp_sav_live, co2_live, status_msg_live = (
+    _, trim_live, f_sav_live, rp_sav_live, co2_live, status_msg_live = (
         calculate_vigv_trim(
             dcs_temp_intake,
             dcs_set_point_load,
