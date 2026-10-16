@@ -245,11 +245,11 @@ def calculate_moist_air_density(temp_c, rh_pct, press_mbar):
 
 def calculate_vigv_trim(
     t_intake, load_mw, act_vigv=62.7, rho_moist=1.165, mode_simulasi=False,
-    base_saving_rate=0.247, price_per_unit=4025000.0, co2_factor=1980.0
+    base_saving_rate=0.247, price_per_unit=4025000.0, co2_factor=1980.0,
+    step_rounding=0.5  # Konfigurasi pembulatan presisi DCS (0.5°)
 ):
-    """Kalkulasi VIGV Trim Otomatis 2-Arah Berbasis Koreksi Proporsional Dinamis."""
     if load_mw <= 0:
-        return 0.0, 0.0, 0.0, 0.0, 'UNIT OFFLINE'
+        return 0.0, 0.0, 0.0, 0.0, 0.0, 'UNIT OFFLINE'
 
     if mode_simulasi:
         base_trim_temp = (t_intake - 20.0) * 0.1
@@ -259,7 +259,7 @@ def calculate_vigv_trim(
             if rho_moist < rho_iso
             else 0.0
         )
-        trim_target = float(np.clip(base_trim_temp + density_corr, 0.2, 2.0))
+        trim_calc = float(np.clip(base_trim_temp + density_corr, 0.2, 2.0))
         status_msg = 'NORMAL ADVISORY'
     else:
         base_ideal_angle = 45.0 + (load_mw / 120.0) * 20.0
@@ -269,22 +269,25 @@ def calculate_vigv_trim(
 
         target_angle_ideal = base_ideal_angle + temp_corr + density_corr
         delta_angle = target_angle_ideal - act_vigv
-        trim_calc = delta_angle * 0.6
-        trim_target = float(np.clip(trim_calc, -2.0, 2.0))
+        trim_calc = float(np.clip(delta_angle * 0.6, -2.0, 2.0))
 
-        if trim_target > 0.1:
+        if trim_calc > 0.1:
             status_msg = 'UNDER-OPENED -> Rekomendasi Trim NAIK (+)'
-        elif trim_target < -0.1:
+        elif trim_calc < -0.1:
             status_msg = 'OVER-OPENED -> Rekomendasi Trim TURUN (-)'
         else:
             status_msg = 'OPTIMAL -> Bukaan Sudut Sudah Pas'
 
-    fuel_saved_h = base_saving_rate * (abs(trim_target) / 2.0)
+    # Pembulatan khusus untuk eksekusi HMI DCS (Step 0.5°)
+    trim_rounded = round(trim_calc / step_rounding) * step_rounding
+
+    fuel_saved_h = base_saving_rate * (abs(trim_rounded) / 2.0)
     fin_saved_h = fuel_saved_h * price_per_unit
     co2_red_h = fuel_saved_h * co2_factor
 
     return (
-        round(trim_target, 2),
+        round(trim_calc, 2),     # Presisi Eksak (Teoritis)
+        round(trim_rounded, 1),  # Presisi DCS (Siap Eksekusi)
         round(fuel_saved_h, 3),
         round(fin_saved_h, 0),
         round(co2_red_h, 1),
@@ -813,7 +816,10 @@ elif active_page == 'Live Verification & DCS Interlock':
     else:
         rho_live_dcs, _ = calculate_moist_air_density(dcs_temp_intake, dcs_rh_pct, dcs_pamb_mbar)
 
-    trim_live, f_sav_live, rp_sav_live, co2_live, status_msg_live = calculate_vigv_trim(
+    # ==========================================================================
+    # INTEGRASI PENYESUAIAN: KALKULASI DUAL-DISPLAY (EXACT vs DCS STEP 0.5°)
+    # ==========================================================================
+    trim_exact, trim_dcs, f_sav_live, rp_sav_live, co2_live, status_msg_live = calculate_vigv_trim(
         dcs_temp_intake,
         dcs_set_point_load,
         act_vigv=dcs_act_vigv,
@@ -821,17 +827,20 @@ elif active_page == 'Live Verification & DCS Interlock':
         mode_simulasi=False,
         base_saving_rate=base_saving_rate,
         price_per_unit=price_per_unit,
-        co2_factor=co2_factor
+        co2_factor=co2_factor,
+        step_rounding=0.5  # Step pembulatan 0.5° khusus HMI DCS
     )
-    target_vigv_live = dcs_act_vigv + trim_live
 
-    tat_drop_pred = 2.5 * (trim_live / 2.0)
-    tit_drop_pred = 4.0 * (trim_live / 2.0)
+    target_vigv_exact = dcs_act_vigv + trim_exact
+    target_vigv_dcs = dcs_act_vigv + trim_dcs
+
+    tat_drop_pred = 2.5 * (trim_dcs / 2.0)
+    tit_drop_pred = 4.0 * (trim_dcs / 2.0)
     pred_tat_after = dcs_tat - tat_drop_pred
     pred_tit_after = dcs_tit - tit_drop_pred
 
     with col_d3:
-        card_style = 'card-safe' if trim_live >= 0 else 'card-warn'
+        card_style = 'card-safe' if trim_dcs >= 0 else 'card-warn'
         st.markdown(f'<div class="{card_style}">', unsafe_allow_html=True)
         st.markdown('**REKOMENDASI INPUT HMI DCS:**')
 
@@ -839,11 +848,13 @@ elif active_page == 'Live Verification & DCS Interlock':
             st.markdown('<h3 style="color: #94A3B8; margin:0;">WAITING OPERATOR INPUT</h3>', unsafe_allow_html=True)
             st.caption('Silakan masukkan nilai Set Point Load, Temp Intake, dan Ambient Pressure dari DCS untuk melihat evaluasi.')
         else:
-            trim_sign = '+' if trim_live > 0 else ''
-            st.markdown(f'<h2 style="color: #38BDF8; margin:0;">Target Bias: {trim_sign}{trim_live:.2f}°</h2>', unsafe_allow_html=True)
-            st.markdown(f'**Status Evaluasi:** `{status_msg_live}`')
-            st.markdown(f'**Target Bukaan VIGV Akhir:** `{target_vigv_live:.2f}°` *(Saat Ini: {dcs_act_vigv:.1f}°)*')
+            trim_sign = '+' if trim_dcs > 0 else ''
+            # Tampilan Utama: Nilai Siap Input HMI DCS (Kelipatan 0.5°)
+            st.markdown(f'<h2 style="color: #38BDF8; margin:0;">Target Bias DCS: {trim_sign}{trim_dcs:.1f}°</h2>', unsafe_allow_html=True)
+            st.markdown(f'**Target Bukaan VIGV (Input HMI):** `{target_vigv_dcs:.1f}°` *(Saat Ini: {dcs_act_vigv:.1f}°)*')
+            st.caption(f'Presisi Kalkulasi Fisika: Bias {trim_exact:+.2f}° (Target Ideal: {target_vigv_exact:.2f}°)')
             st.markdown('---')
+            st.markdown(f'**Status Evaluasi:** `{status_msg_live}`')
             st.markdown('**PREDIKSI PARAMETER PASCA-TRIM (AFTER):**')
             st.markdown(f'• **Prediksi TAT After Trim:** `{pred_tat_after:.1f} °C` *(Estimasi Perubahan: {-tat_drop_pred:+.1f}°C)*')
             st.markdown(f'• **Prediksi TIT After Trim:** `{pred_tit_after:.1f} °C` *(Estimasi Perubahan: {-tit_drop_pred:+.1f}°C)*')
@@ -856,14 +867,14 @@ elif active_page == 'Live Verification & DCS Interlock':
 
     with e_col1:
         st.markdown('**Status VIGV Angle**')
-        if target_vigv_live < 45.0:
-            st.error(f'TRIP CRITICAL! VIGV < 45° ({target_vigv_live:.1f}°)')
-        elif dcs_set_point_load <= 70.0 and (47.0 <= target_vigv_live <= 48.0):
-            st.info(f'Standby Mode (0-70 MW): VIGV {target_vigv_live:.1f}°')
-        elif dcs_set_point_load > 120.0 and target_vigv_live >= 72.0:
+        if target_vigv_dcs < 45.0:
+            st.error(f'TRIP CRITICAL! VIGV < 45° ({target_vigv_dcs:.1f}°)')
+        elif dcs_set_point_load <= 70.0 and (47.0 <= target_vigv_dcs <= 48.0):
+            st.info(f'Standby Mode (0-70 MW): VIGV {target_vigv_dcs:.1f}°')
+        elif dcs_set_point_load > 120.0 and target_vigv_dcs >= 72.0:
             st.warning('Base Load (>120 MW): Max Limit 72° REACHED')
         else:
-            st.success(f'Normal Angle: {target_vigv_live:.1f}° (Safe)')
+            st.success(f'Normal Angle: {target_vigv_dcs:.1f}° (Safe)')
 
     with e_col2:
         st.markdown('**Status TAT Exhaust**')
@@ -901,7 +912,7 @@ elif active_page == 'Live Verification & DCS Interlock':
     with chart_tab1:
         fig_trend = create_vigv_trend_chart(
             dcs_act_vigv,
-            target_vigv_live,
+            target_vigv_dcs,
             dcs_tat,
             pred_tat_after,
             dcs_tit,
@@ -911,7 +922,7 @@ elif active_page == 'Live Verification & DCS Interlock':
 
     with chart_tab2:
         fig_map = create_performance_map(
-            dcs_set_point_load, dcs_pcd, target_vigv_live
+            dcs_set_point_load, dcs_pcd, target_vigv_dcs
         )
         st.plotly_chart(fig_map, use_container_width=True)
 
