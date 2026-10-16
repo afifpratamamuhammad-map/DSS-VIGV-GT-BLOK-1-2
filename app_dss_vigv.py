@@ -123,6 +123,37 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# ==============================================================================
+# INISIALISASI SESSION STATE GLOBAL UNTUK MENCEGAH MENGHILANGNYA INPUT
+# ==============================================================================
+if 'dcs_set_point_load' not in st.session_state:
+    st.session_state.dcs_set_point_load = 0.0
+if 'dcs_act_vigv' not in st.session_state:
+    st.session_state.dcs_act_vigv = 0.0
+if 'dcs_fuel_cons' not in st.session_state:
+    st.session_state.dcs_fuel_cons = 0.0
+if 'dcs_tat' not in st.session_state:
+    st.session_state.dcs_tat = 0.0
+if 'dcs_tit' not in st.session_state:
+    st.session_state.dcs_tit = 0.0
+if 'dcs_pcd' not in st.session_state:
+    st.session_state.dcs_pcd = 0.0
+if 'dcs_pamb_mbar' not in st.session_state:
+    st.session_state.dcs_pamb_mbar = 0.0
+if 'dcs_temp_intake' not in st.session_state:
+    st.session_state.dcs_temp_intake = 0.0
+if 'dcs_rh_pct' not in st.session_state:
+    st.session_state.dcs_rh_pct = 78.0
+
+if 'sim_mw' not in st.session_state:
+    st.session_state.sim_mw = 104.0
+if 'sim_temp' not in st.session_state:
+    st.session_state.sim_temp = 32.5
+if 'sim_pamb' not in st.session_state:
+    st.session_state.sim_pamb = 1011.0
+if 'sim_pcd_input' not in st.session_state:
+    st.session_state.sim_pcd_input = 10.8
+
 
 # ==============================================================================
 # 2. LOAD MODEL PROPHET & FUNGSI PREDIKSI AI WEATHER
@@ -262,9 +293,7 @@ def calculate_vigv_trim(
 
 
 def predict_intake_temp_adaptive(t_ambient, load_mw, hour):
-    """
-    Kalkulasi Adaptif Suhu Intake berdasarkan Efek Radiasi Pembangkit & Beban GT.
-    """
+    """Kalkulasi Adaptif Suhu Intake berdasarkan Efek Radiasi Pembangkit & Beban GT."""
     base_offset = 0.8
     load_factor = (load_mw / 140.0) * 0.7
     time_factor = 0.8 if 11 <= hour <= 14 else (0.4 if 7 <= hour <= 17 else 0.1)
@@ -743,29 +772,7 @@ if active_page == 'Live Weather & Prediksi Shift':
 elif active_page == 'Live Verification & DCS Interlock':
     st.subheader('DCS Inputs & Protective Limit Monitor')
 
-    # 1. Inisialisasi nilai session_state jika belum ada
-    if 'dcs_set_point_load' not in st.session_state:
-        st.session_state.dcs_set_point_load = 0.0
-    if 'dcs_act_vigv' not in st.session_state:
-        st.session_state.dcs_act_vigv = 0.0
-    if 'dcs_fuel_cons' not in st.session_state:
-        st.session_state.dcs_fuel_cons = 0.0
-    if 'dcs_tat' not in st.session_state:
-        st.session_state.dcs_tat = 0.0
-    if 'dcs_tit' not in st.session_state:
-        st.session_state.dcs_tit = 0.0
-    if 'dcs_pcd' not in st.session_state:
-        st.session_state.dcs_pcd = 0.0
-    if 'dcs_pamb_mbar' not in st.session_state:
-        st.session_state.dcs_pamb_mbar = 0.0
-    if 'dcs_temp_intake' not in st.session_state:
-        st.session_state.dcs_temp_intake = 0.0
-
-    # Sinkronisasi otomatis telemetri API untuk RH saja
-    if 'dcs_rh_pct' not in st.session_state:
-        st.session_state.dcs_rh_pct = float(input_rh_amb)
-
-    # 2. Fungsi Callback Reset Input
+    # Callback khusus untuk Tombol Reset Live Verification
     def reset_live_inputs():
         st.session_state.dcs_set_point_load = 0.0
         st.session_state.dcs_act_vigv = 0.0
@@ -777,7 +784,6 @@ elif active_page == 'Live Verification & DCS Interlock':
         st.session_state.dcs_temp_intake = 0.0
         st.session_state.dcs_rh_pct = float(input_rh_amb)
 
-    # Tombol Reset
     col_btn1, col_btn2 = st.columns([1, 4])
     with col_btn1:
         st.button('Reset Parameter Input', on_click=reset_live_inputs, use_container_width=True)
@@ -919,15 +925,27 @@ elif active_page == 'What-If Analysis & Dynamic Simulation':
         'dan estimasi laju aliran massa udara (Air Mass Flow) ke turbin gas.'
     )
 
+    # Callback khusus untuk Tombol Reset Simulasi
+    def reset_sim_inputs():
+        st.session_state.sim_mw = 104.0
+        st.session_state.sim_temp = 32.5
+        st.session_state.sim_pamb = 1011.0
+        st.session_state.sim_pcd_input = 10.8
+
+    col_sim_btn1, _ = st.columns([1, 4])
+    with col_sim_btn1:
+        st.button('Reset Parameter Input', on_click=reset_sim_inputs, use_container_width=True, key='btn_reset_sim')
+
+    st.markdown('---')
+
     s_col1, s_col2 = st.columns(2)
     with s_col1:
-        sim_mw = st.slider('Simulasi Beban Generator (MW)', 40.0, 140.0, 104.0, step=1.0)
-        sim_temp = st.slider('Simulasi Suhu Intake (°C)', 20.0, 40.0, 32.5, step=0.5)
+        sim_mw = st.slider('Simulasi Beban Generator (MW)', 40.0, 140.0, step=1.0, key='sim_mw')
+        sim_temp = st.slider('Simulasi Suhu Intake (°C)', 20.0, 40.0, step=0.5, key='sim_temp')
     
     with s_col2:
-        sim_pamb = st.slider('Simulasi Ambient Pressure / Pamb (mbar)', 990.0, 1030.0, 1011.0, step=1.0)
-        default_pcd_calc = round((sim_mw / 150.0) * 13.0 + 1.8, 1)
-        sim_pcd_input = st.slider('Simulasi Press Discharge Comp / Pcd (bar)', 5.0, 15.0, default_pcd_calc, step=0.1)
+        sim_pamb = st.slider('Simulasi Ambient Pressure / Pamb (mbar)', 990.0, 1030.0, step=1.0, key='sim_pamb')
+        sim_pcd_input = st.slider('Simulasi Press Discharge Comp / Pcd (bar)', 5.0, 15.0, step=0.1, key='sim_pcd_input')
 
     sim_rho, _ = calculate_moist_air_density(sim_temp, 75.0, sim_pamb)
 
@@ -972,14 +990,14 @@ elif active_page == 'What-If Analysis & Dynamic Simulation':
 # HALAMAN 4: MANFAAT & PREDIKSI FILTER RUL
 # ------------------------------------------------------------------------------
 elif active_page == 'Manfaat & Prediksi Filter RUL':
-    dcs_set_point_load = 104.0
-    dcs_act_vigv = 62.7
-    dcs_fuel_cons = default_fuel_cons
-    dcs_tat = 498.0
-    dcs_temp_intake = round(input_temp_amb + 1.2, 1)
-    dcs_pcd = 11.2
-    dcs_pamb_mbar = float(input_pamb_mbar)
-    dcs_rh_pct = float(input_rh_amb)
+    dcs_set_point_load = st.session_state.dcs_set_point_load if st.session_state.dcs_set_point_load > 0 else 104.0
+    dcs_act_vigv = st.session_state.dcs_act_vigv if st.session_state.dcs_act_vigv > 0 else 62.7
+    dcs_fuel_cons = st.session_state.dcs_fuel_cons if st.session_state.dcs_fuel_cons > 0 else default_fuel_cons
+    dcs_tat = st.session_state.dcs_tat if st.session_state.dcs_tat > 0 else 498.0
+    dcs_temp_intake = st.session_state.dcs_temp_intake if st.session_state.dcs_temp_intake > 0 else round(input_temp_amb + 1.2, 1)
+    dcs_pcd = st.session_state.dcs_pcd if st.session_state.dcs_pcd > 0 else 11.2
+    dcs_pamb_mbar = st.session_state.dcs_pamb_mbar if st.session_state.dcs_pamb_mbar > 0 else float(input_pamb_mbar)
+    dcs_rh_pct = st.session_state.dcs_rh_pct if st.session_state.dcs_rh_pct > 0 else float(input_rh_amb)
 
     rho_live_dcs, _ = calculate_moist_air_density(
         dcs_temp_intake, dcs_rh_pct, dcs_pamb_mbar
