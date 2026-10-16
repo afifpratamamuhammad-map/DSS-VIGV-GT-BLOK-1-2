@@ -124,7 +124,7 @@ st.markdown(
 )
 
 # ==============================================================================
-# INISIALISASI SESSION STATE PERSISTEN UNTUK DCS & SIMULASI
+# INISIALISASI SESSION STATE PERSISTEN UNTUK DCS & SIMULASI (AWAL 0.0)
 # ==============================================================================
 if 'dcs_set_point_load' not in st.session_state:
     st.session_state.dcs_set_point_load = 0.0
@@ -146,13 +146,13 @@ if 'dcs_rh_pct' not in st.session_state:
     st.session_state.dcs_rh_pct = 78.0
 
 if 'sim_mw' not in st.session_state:
-    st.session_state.sim_mw = 104.0
+    st.session_state.sim_mw = 0.0
 if 'sim_temp' not in st.session_state:
-    st.session_state.sim_temp = 32.5
+    st.session_state.sim_temp = 0.0
 if 'sim_pamb' not in st.session_state:
-    st.session_state.sim_pamb = 1011.0
+    st.session_state.sim_pamb = 0.0
 if 'sim_pcd_input' not in st.session_state:
-    st.session_state.sim_pcd_input = 10.8
+    st.session_state.sim_pcd_input = 0.0
 
 
 # ==============================================================================
@@ -249,8 +249,8 @@ def calculate_vigv_trim(
     step_rounding=0.5
 ):
     """Kalkulasi VIGV Trim Otomatis 2-Arah Berbasis Koreksi Proporsional Dinamis."""
-    if load_mw <= 0:
-        return 0.0, 0.0, 0.0, 0.0, 0.0, 'UNIT OFFLINE'
+    if load_mw <= 0 or t_intake <= 0:
+        return 0.0, 0.0, 0.0, 0.0, 0.0, 'UNIT OFFLINE / NO INPUT'
 
     if mode_simulasi:
         base_trim_temp = (t_intake - 20.0) * 0.1
@@ -408,7 +408,7 @@ if fuel_mode == 'Gas Alam (Natural Gas)':
     fuel_unit = 'kscm/h'
     fuel_short = 'Gas Alam'
     base_saving_rate = 0.247
-    default_fuel_cons = 35.30
+    default_fuel_cons = 0.0
 else:
     lhv_fuel = 8600.0 * 1000.0
     co2_factor = 2.68 * 1000.0
@@ -416,7 +416,7 @@ else:
     fuel_unit = 'cbm/h'
     fuel_short = 'HSD (Solar)'
     base_saving_rate = 0.220
-    default_fuel_cons = 31.20
+    default_fuel_cons = 0.0
 
 moist_density, vapor_press = calculate_moist_air_density(
     input_temp_amb, input_rh_amb, input_pamb_mbar
@@ -630,8 +630,11 @@ if active_page == 'Live Weather & Prediksi Shift':
         value=float(input_temp_amb),
         step=0.5,
     )
+    
+    # Mengambil nilai rekomendasi rencana beban dari Halaman 2 jika ada
+    initial_load_plan = float(st.session_state.dcs_set_point_load) if st.session_state.dcs_set_point_load > 0 else 0.0
     load_mw_plan = col2.number_input(
-        'Rencana Set Point Beban (MW)', value=104.0, step=1.0
+        'Rencana Set Point Beban (MW)', value=initial_load_plan, step=1.0
     )
 
     slots = ['10:00 WIB (Pagi)', '17:00 WIB (Siang)', '00:00 WIB (Malam)']
@@ -829,7 +832,7 @@ elif active_page == 'Live Verification & DCS Interlock':
         rho_live_dcs, _ = calculate_moist_air_density(dcs_temp_intake, dcs_rh_pct, dcs_pamb_mbar)
 
     # ==========================================================================
-    # INTEGRASI PENYESUAIAN: KALKULASI DUAL-DISPLAY (EXACT vs DCS STEP 0.5°)
+    # KALKULASI DUAL-DISPLAY (EXACT vs DCS STEP 0.5°)
     # ==========================================================================
     trim_exact, trim_dcs, f_sav_live, rp_sav_live, co2_live, status_msg_live = calculate_vigv_trim(
         dcs_temp_intake,
@@ -938,7 +941,7 @@ elif active_page == 'Live Verification & DCS Interlock':
         st.plotly_chart(fig_map, use_container_width=True)
 
 # ------------------------------------------------------------------------------
-# HALAMAN 3: WHAT-IF ANALYSIS & DYNAMIC SIMULATION
+# HALAMAN 3: WHAT-IF ANALYSIS & DYNAMIC SIMULATION (SINURUT INPUT HALAMAN 2)
 # ------------------------------------------------------------------------------
 elif active_page == 'What-If Analysis & Dynamic Simulation':
     st.subheader('Visual What-If Analysis & Dynamic Simulation')
@@ -947,12 +950,22 @@ elif active_page == 'What-If Analysis & Dynamic Simulation':
         'dan estimasi laju aliran massa udara (Air Mass Flow) ke turbin gas.'
     )
 
-    # Callback khusus untuk Tombol Reset Simulasi
+    # Inisialisasi awal nilai simulasi dari Halaman 2 (jika belum pernah digeser)
+    if st.session_state.sim_mw == 0.0:
+        st.session_state.sim_mw = float(st.session_state.dcs_set_point_load)
+    if st.session_state.sim_temp == 0.0:
+        st.session_state.sim_temp = float(st.session_state.dcs_temp_intake)
+    if st.session_state.sim_pamb == 0.0:
+        st.session_state.sim_pamb = float(st.session_state.dcs_pamb_mbar)
+    if st.session_state.sim_pcd_input == 0.0:
+        st.session_state.sim_pcd_input = float(st.session_state.dcs_pcd)
+
+    # Callback untuk Reset Simulasi mengikuti data Halaman 2
     def reset_sim_inputs():
-        st.session_state.sim_mw = 104.0
-        st.session_state.sim_temp = 32.5
-        st.session_state.sim_pamb = 1011.0
-        st.session_state.sim_pcd_input = 10.8
+        st.session_state.sim_mw = float(st.session_state.dcs_set_point_load)
+        st.session_state.sim_temp = float(st.session_state.dcs_temp_intake)
+        st.session_state.sim_pamb = float(st.session_state.dcs_pamb_mbar)
+        st.session_state.sim_pcd_input = float(st.session_state.dcs_pcd)
 
     # Callbacks Update State dari Slider Simulasi
     def update_sim_mw(): st.session_state.sim_mw = st.session_state.w_sim_mw
@@ -962,205 +975,208 @@ elif active_page == 'What-If Analysis & Dynamic Simulation':
 
     col_sim_btn1, _ = st.columns([1, 4])
     with col_sim_btn1:
-        st.button('Reset Parameter Input', on_click=reset_sim_inputs, use_container_width=True, key='btn_reset_sim')
+        st.button('Sinkronkan / Reset Ke Data DCS (Halaman 2)', on_click=reset_sim_inputs, use_container_width=True, key='btn_reset_sim')
 
     st.markdown('---')
 
     s_col1, s_col2 = st.columns(2)
     with s_col1:
-        sim_mw = st.slider('Simulasi Beban Generator (MW)', 40.0, 140.0, value=float(st.session_state.sim_mw), step=1.0, key='w_sim_mw', on_change=update_sim_mw)
-        sim_temp = st.slider('Simulasi Suhu Intake (°C)', 20.0, 40.0, value=float(st.session_state.sim_temp), step=0.5, key='w_sim_temp', on_change=update_sim_temp)
+        sim_mw = st.slider('Simulasi Beban Generator (MW)', 0.0, 140.0, value=float(st.session_state.sim_mw), step=1.0, key='w_sim_mw', on_change=update_sim_mw)
+        sim_temp = st.slider('Simulasi Suhu Intake (°C)', 0.0, 40.0, value=float(st.session_state.sim_temp), step=0.5, key='w_sim_temp', on_change=update_sim_temp)
     
     with s_col2:
-        sim_pamb = st.slider('Simulasi Ambient Pressure / Pamb (mbar)', 990.0, 1030.0, value=float(st.session_state.sim_pamb), step=1.0, key='w_sim_pamb', on_change=update_sim_pamb)
-        sim_pcd_input = st.slider('Simulasi Press Discharge Comp / Pcd (bar)', 5.0, 15.0, value=float(st.session_state.sim_pcd_input), step=0.1, key='w_sim_pcd_input', on_change=update_sim_pcd)
+        sim_pamb = st.slider('Simulasi Ambient Pressure / Pamb (mbar)', 0.0, 1030.0, value=float(st.session_state.sim_pamb), step=1.0, key='w_sim_pamb', on_change=update_sim_pamb)
+        sim_pcd_input = st.slider('Simulasi Press Discharge Comp / Pcd (bar)', 0.0, 15.0, value=float(st.session_state.sim_pcd_input), step=0.1, key='w_sim_pcd_input', on_change=update_sim_pcd)
 
-    sim_rho, _ = calculate_moist_air_density(sim_temp, 75.0, sim_pamb)
+    if sim_mw <= 0 or sim_temp <= 0 or sim_pamb <= 0:
+        st.warning('Parameter simulasi masih 0 MW / 0 °C. Masukkan data di Halaman 2 (Live Verification) atau geser slider di atas.')
+    else:
+        sim_rho, _ = calculate_moist_air_density(sim_temp, 75.0, sim_pamb)
 
-    _, sim_trim, sim_fsav, sim_rpsav, sim_co2, _ = calculate_vigv_trim(
-        sim_temp, sim_mw, rho_moist=sim_rho, mode_simulasi=True,
-        base_saving_rate=base_saving_rate, price_per_unit=price_per_unit, co2_factor=co2_factor
-    )
-    sim_base_ideal_angle = 45.0 + (sim_mw / 120.0) * 20.0
-    sim_optimal_angle = sim_base_ideal_angle + sim_trim
+        _, sim_trim, sim_fsav, sim_rpsav, sim_co2, _ = calculate_vigv_trim(
+            sim_temp, sim_mw, rho_moist=sim_rho, mode_simulasi=True,
+            base_saving_rate=base_saving_rate, price_per_unit=price_per_unit, co2_factor=co2_factor
+        )
+        sim_base_ideal_angle = 45.0 + (sim_mw / 120.0) * 20.0
+        sim_optimal_angle = sim_base_ideal_angle + sim_trim
 
-    base_volumetric_flow = 395.0  # m3/s
-    pamb_bar = sim_pamb / 1000.0
-    pressure_ratio = sim_pcd_input / pamb_bar if pamb_bar > 0 else 11.0
-    
-    vigv_ratio = sim_optimal_angle / 65.0
-    pr_correction = math.sqrt(pressure_ratio / 11.0)
-    
-    air_flow_kg_s = base_volumetric_flow * sim_rho * vigv_ratio * pr_correction
-    air_flow_ton_h = (air_flow_kg_s * 3600.0) / 1000.0
-
-    fig_sim = create_performance_map(sim_mw, sim_pcd_input, sim_trim)
-
-    res1, res2 = st.columns([1.4, 1])
-    with res1:
-        st.plotly_chart(fig_sim, use_container_width=True)
+        base_volumetric_flow = 395.0  # m3/s
+        pamb_bar = sim_pamb / 1000.0
+        pressure_ratio = sim_pcd_input / pamb_bar if pamb_bar > 0 else 11.0
         
-    with res2:
-        st.markdown('<div class="card-safe">', unsafe_allow_html=True)
-        st.markdown('#### Hasil Evaluasi Dynamic What-If')
+        vigv_ratio = sim_optimal_angle / 65.0
+        pr_correction = math.sqrt(pressure_ratio / 11.0)
         
-        st.metric('Estimasi Flow Udara Intake', f'{air_flow_kg_s:.1f} kg/s', delta=f'{air_flow_ton_h:.0f} Ton / jam')
-        st.markdown('---')
-        
-        st.metric('Rekomendasi VIGV Trim', f'+{sim_trim:.1f} °')
-        st.metric('Sudut VIGV Optimal', f'{sim_optimal_angle:.1f} °', delta=f'+{sim_trim:.1f}° dari Baseline')
-        st.metric('Estimasi Hemat BBM', f'{sim_fsav:.3f} {fuel_unit}')
-        st.metric('Estimasi Hemat Biaya', f'Rp {sim_rpsav:,.0f} / jam')
-        st.metric('Reduksi Emisi CO2', f'{sim_co2:.1f} kg CO2 / jam')
-        st.markdown('</div>', unsafe_allow_html=True)
+        air_flow_kg_s = base_volumetric_flow * sim_rho * vigv_ratio * pr_correction
+        air_flow_ton_h = (air_flow_kg_s * 3600.0) / 1000.0
+
+        fig_sim = create_performance_map(sim_mw, sim_pcd_input, sim_trim)
+
+        res1, res2 = st.columns([1.4, 1])
+        with res1:
+            st.plotly_chart(fig_sim, use_container_width=True)
+            
+        with res2:
+            st.markdown('<div class="card-safe">', unsafe_allow_html=True)
+            st.markdown('#### Hasil Evaluasi Dynamic What-If')
+            
+            st.metric('Estimasi Flow Udara Intake', f'{air_flow_kg_s:.1f} kg/s', delta=f'{air_flow_ton_h:.0f} Ton / jam')
+            st.markdown('---')
+            
+            st.metric('Rekomendasi VIGV Trim', f'+{sim_trim:.1f} °')
+            st.metric('Sudut VIGV Optimal', f'{sim_optimal_angle:.1f} °', delta=f'+{sim_trim:.1f}° dari Baseline')
+            st.metric('Estimasi Hemat BBM', f'{sim_fsav:.3f} {fuel_unit}')
+            st.metric('Estimasi Hemat Biaya', f'Rp {sim_rpsav:,.0f} / jam')
+            st.metric('Reduksi Emisi CO2', f'{sim_co2:.1f} kg CO2 / jam')
+            st.markdown('</div>', unsafe_allow_html=True)
 
 # ------------------------------------------------------------------------------
-# HALAMAN 4: MANFAAT & PREDIKSI FILTER RUL
+# HALAMAN 4: MANFAAT & PREDIKSI FILTER RUL (PURE DCS-DRIVEN)
 # ------------------------------------------------------------------------------
 elif active_page == 'Manfaat & Prediksi Filter RUL':
-    dcs_set_point_load = st.session_state.dcs_set_point_load if st.session_state.dcs_set_point_load > 0 else 104.0
-    dcs_act_vigv = st.session_state.dcs_act_vigv if st.session_state.dcs_act_vigv > 0 else 62.7
-    dcs_fuel_cons = st.session_state.dcs_fuel_cons if st.session_state.dcs_fuel_cons > 0 else default_fuel_cons
-    dcs_tat = st.session_state.dcs_tat if st.session_state.dcs_tat > 0 else 498.0
-    dcs_temp_intake = st.session_state.dcs_temp_intake if st.session_state.dcs_temp_intake > 0 else round(input_temp_amb + 1.2, 1)
-    dcs_pcd = st.session_state.dcs_pcd if st.session_state.dcs_pcd > 0 else 11.2
-    dcs_pamb_mbar = st.session_state.dcs_pamb_mbar if st.session_state.dcs_pamb_mbar > 0 else float(input_pamb_mbar)
-    dcs_rh_pct = st.session_state.dcs_rh_pct if st.session_state.dcs_rh_pct > 0 else float(input_rh_amb)
-
-    rho_live_dcs, _ = calculate_moist_air_density(
-        dcs_temp_intake, dcs_rh_pct, dcs_pamb_mbar
-    )
-    _, trim_live, f_sav_live, rp_sav_live, co2_live, status_msg_live = (
-        calculate_vigv_trim(
-            dcs_temp_intake,
-            dcs_set_point_load,
-            act_vigv=dcs_act_vigv,
-            rho_moist=rho_live_dcs,
-            mode_simulasi=False,
-            base_saving_rate=base_saving_rate,
-            price_per_unit=price_per_unit,
-            co2_factor=co2_factor
-        )
-    )
+    dcs_set_point_load = float(st.session_state.dcs_set_point_load)
+    dcs_act_vigv = float(st.session_state.dcs_act_vigv)
+    dcs_fuel_cons = float(st.session_state.dcs_fuel_cons)
+    dcs_tat = float(st.session_state.dcs_tat)
+    dcs_temp_intake = float(st.session_state.dcs_temp_intake)
+    dcs_pcd = float(st.session_state.dcs_pcd)
+    dcs_pamb_mbar = float(st.session_state.dcs_pamb_mbar)
+    dcs_rh_pct = float(st.session_state.dcs_rh_pct)
 
     st.subheader(f'Ringkasan Manfaat & Prediksi ({fuel_mode})')
 
-    dcs_pamb_bar = dcs_pamb_mbar / 1000.0
+    if dcs_set_point_load <= 0 or dcs_temp_intake <= 0 or dcs_pamb_mbar <= 0:
+        st.warning('WAITING OPERATOR INPUT: Belum ada data operasional DCS yang diinputkan pada Halaman 2 (Live Verification). Silakan lengkapi parameter terlebih dahulu.')
+    else:
+        rho_live_dcs, _ = calculate_moist_air_density(
+            dcs_temp_intake, dcs_rh_pct, dcs_pamb_mbar
+        )
+        _, trim_live, f_sav_live, rp_sav_live, co2_live, status_msg_live = (
+            calculate_vigv_trim(
+                dcs_temp_intake,
+                dcs_set_point_load,
+                act_vigv=dcs_act_vigv,
+                rho_moist=rho_live_dcs,
+                mode_simulasi=False,
+                base_saving_rate=base_saving_rate,
+                price_per_unit=price_per_unit,
+                co2_factor=co2_factor
+            )
+        )
 
-    pcd_expected_clean = (dcs_pamb_bar * 11.15) * (
-        dcs_set_point_load / 104.0
-    ) ** 0.1
-    pcd_deficit = max(pcd_expected_clean - dcs_pcd, 0.0)
+        dcs_pamb_bar = dcs_pamb_mbar / 1000.0
 
-    virtual_dp_filter_bar = 0.006 + (pcd_deficit * 0.02)
-    virtual_dp_mbar = virtual_dp_filter_bar * 1000.0
+        pcd_expected_clean = (dcs_pamb_bar * 11.15) * (
+            dcs_set_point_load / 104.0
+        ) ** 0.1
+        pcd_deficit = max(pcd_expected_clean - dcs_pcd, 0.0)
 
-    dp_warning_limit_bar = 0.015
-    dp_replace_limit_bar = 0.019
+        virtual_dp_filter_bar = 0.006 + (pcd_deficit * 0.02)
+        virtual_dp_mbar = virtual_dp_filter_bar * 1000.0
 
-    rate_dp_per_day_bar = 0.00007 if dcs_temp_intake >= 26.0 else 0.00012
-    margin_to_replace_bar = max(
-        dp_replace_limit_bar - virtual_dp_filter_bar, 0.0
-    )
-    estimated_rul_days = int(margin_to_replace_bar / rate_dp_per_day_bar)
+        dp_warning_limit_bar = 0.015
+        dp_replace_limit_bar = 0.019
 
-    estimated_fuel_cons_after_trim = max(dcs_fuel_cons - f_sav_live, 0.0)
-    total_energy_saved_kkal = f_sav_live * lhv_fuel
+        rate_dp_per_day_bar = 0.00007 if dcs_temp_intake >= 26.0 else 0.00012
+        margin_to_replace_bar = max(
+            dp_replace_limit_bar - virtual_dp_filter_bar, 0.0
+        )
+        estimated_rul_days = int(margin_to_replace_bar / rate_dp_per_day_bar)
 
-    if dcs_set_point_load > 0:
+        estimated_fuel_cons_after_trim = max(dcs_fuel_cons - f_sav_live, 0.0)
+        total_energy_saved_kkal = f_sav_live * lhv_fuel
+
         heat_rate_gain_kkal = total_energy_saved_kkal / (
             dcs_set_point_load * 1000.0
+        ) if dcs_set_point_load > 0 else 0.0
+
+        heat_rate_gain_kj = heat_rate_gain_kkal * 4.184
+
+        p_in_virtual = dcs_pamb_bar - virtual_dp_filter_bar
+        r_p = dcs_pcd / p_in_virtual if p_in_virtual > 0 else 1.0
+        t_in_k = dcs_temp_intake + 273.15
+        eta_c_base = (
+            (t_in_k * (r_p**0.286 - 1)) / (dcs_tat + 273.15 - t_in_k) * 100
+            if (dcs_tat + 273.15 - t_in_k) > 0 else 0.0
         )
-    else:
-        heat_rate_gain_kkal = 0.0
+        eta_c_gain = 0.65 if abs(trim_live) > 0 else 0.0
+        eta_c_final = min(eta_c_base + eta_c_gain, 88.5)
 
-    heat_rate_gain_kj = heat_rate_gain_kkal * 4.184
+        sfc_actual = (
+            (dcs_fuel_cons / dcs_set_point_load) if dcs_set_point_load > 0 else 0.0
+        )
+        sfc_saving = (
+            (f_sav_live / dcs_set_point_load) if dcs_set_point_load > 0 else 0.0
+        )
 
-    p_in_virtual = dcs_pamb_bar - virtual_dp_filter_bar
-    r_p = dcs_pcd / p_in_virtual if p_in_virtual > 0 else 1.0
-    t_in_k = dcs_temp_intake + 273.15
-    eta_c_base = (
-        (t_in_k * (r_p**0.286 - 1)) / (dcs_tat + 273.15 - t_in_k) * 100
-        if (dcs_tat + 273.15 - t_in_k) > 0 else 0.0
-    )
-    eta_c_gain = 0.65 if abs(trim_live) > 0 else 0.0
-    eta_c_final = min(eta_c_base + eta_c_gain, 88.5)
+        st.markdown('### 1. Dampak Hemat Bahan Bakar & Dekarbonisasi')
+        m1, m2, m3, m4 = st.columns(4)
 
-    sfc_actual = (
-        (dcs_fuel_cons / dcs_set_point_load) if dcs_set_point_load > 0 else 0.0
-    )
-    sfc_saving = (
-        (f_sav_live / dcs_set_point_load) if dcs_set_point_load > 0 else 0.0
-    )
+        m1.metric(
+            'Est. Konsumsi BB After Trim',
+            f'{estimated_fuel_cons_after_trim:.2f} {fuel_unit}',
+            delta=f'-{f_sav_live:.3f} {fuel_unit}',
+        )
+        m2.metric(
+            'Laju Penghematan BB / Jam',
+            f'{f_sav_live:.3f} {fuel_unit}',
+            delta=f'-{sfc_saving:.4f} {fuel_unit}/MWh',
+        )
+        m3.metric('Penghematan Finansial / Jam', f'Rp {rp_sav_live:,.0f}')
+        m4.metric('Reduksi Emisi CO2 / Jam', f'{co2_live:.1f} kg CO2/jam')
 
-    st.markdown('### 1. Dampak Hemat Bahan Bakar & Dekarbonisasi')
-    m1, m2, m3, m4 = st.columns(4)
+        st.markdown('---')
+        st.markdown(
+            '### 2. Status Tingkat Kekotoran & Prediksi Penggantian Filter Air Intake'
+        )
 
-    m1.metric(
-        'Est. Konsumsi BB After Trim',
-        f'{estimated_fuel_cons_after_trim:.2f} {fuel_unit}',
-        delta=f'-{f_sav_live:.3f} {fuel_unit}',
-    )
-    m2.metric(
-        'Laju Penghematan BB / Jam',
-        f'{f_sav_live:.3f} {fuel_unit}',
-        delta=f'-{sfc_saving:.4f} {fuel_unit}/MWh',
-    )
-    m3.metric('Penghematan Finansial / Jam', f'Rp {rp_sav_live:,.0f}')
-    m4.metric('Reduksi Emisi CO2 / Jam', f'{co2_live:.1f} kg CO2/jam')
+        f_col1, f_col2, f_col3 = st.columns(3)
 
-    st.markdown('---')
-    st.markdown(
-        '### 2. Status Tingkat Kekotoran & Prediksi Penggantian Filter Air Intake'
-    )
+        f_col1.metric(
+            'Virtual Estimasi Beda Tekanan (DP)',
+            f'{virtual_dp_filter_bar:.3f} bar',
+            delta=f'{virtual_dp_mbar:.1f} mbar (Soft-Sensor)',
+        )
 
-    f_col1, f_col2, f_col3 = st.columns(3)
+        f_col2.metric(
+            'Prediksi Sisa Umur Pakai (RUL)',
+            f'{estimated_rul_days} Hari Lagi',
+            delta='Condition-Based Maintenance',
+        )
 
-    f_col1.metric(
-        'Virtual Estimasi Beda Tekanan (DP)',
-        f'{virtual_dp_filter_bar:.3f} bar',
-        delta=f'{virtual_dp_mbar:.1f} mbar (Soft-Sensor)',
-    )
+        with f_col3:
+            st.markdown('**Evaluasi & Rekomendasi Pemeliharaan:**')
+            if virtual_dp_filter_bar >= dp_replace_limit_bar:
+                st.error(
+                    'CRITICAL REPLACE! Estimated DP >= 0,019 bar'
+                    f' ({virtual_dp_mbar:.1f} mbar). Filter kotor, jadwalkan'
+                    ' penggantian segera!'
+                )
+            elif virtual_dp_filter_bar >= dp_warning_limit_bar:
+                st.warning(
+                    'WARNING: Estimated DP >= 0,015 bar'
+                    f' ({virtual_dp_mbar:.1f} mbar). Penumpukan debu meningkat, siapkan'
+                    ' stok filter.'
+                )
+            else:
+                st.success(
+                    'FILTER CLEAN: Estimated DP < 0,015 bar'
+                    f' ({virtual_dp_mbar:.1f} mbar). Kondisi aliran intake bersih &'
+                    ' optimal.'
+                )
 
-    f_col2.metric(
-        'Prediksi Sisa Umur Pakai (RUL)',
-        f'{estimated_rul_days} Hari Lagi',
-        delta='Condition-Based Maintenance',
-    )
+        st.markdown('---')
+        st.markdown('### 3. Performa Termal & Efisiensi Kompresor GT')
+        e1, e2, e3 = st.columns(3)
+        e1.metric('Specific Fuel Cons (SFC)', f'{sfc_actual:.4f} {fuel_unit}/MWh')
 
-    with f_col3:
-        st.markdown('**Evaluasi & Rekomendasi Pemeliharaan:**')
-        if virtual_dp_filter_bar >= dp_replace_limit_bar:
-            st.error(
-                'CRITICAL REPLACE! Estimated DP >= 0,019 bar'
-                f' ({virtual_dp_mbar:.1f} mbar). Filter kotor, jadwalkan'
-                ' penggantian segera!'
-            )
-        elif virtual_dp_filter_bar >= dp_warning_limit_bar:
-            st.warning(
-                'WARNING: Estimated DP >= 0,015 bar'
-                f' ({virtual_dp_mbar:.1f} mbar). Penumpukan debu meningkat, siapkan'
-                ' stok filter.'
-            )
-        else:
-            st.success(
-                'FILTER CLEAN: Estimated DP < 0,015 bar'
-                f' ({virtual_dp_mbar:.1f} mbar). Kondisi aliran intake bersih &'
-                ' optimal.'
-            )
-
-    st.markdown('---')
-    st.markdown('### 3. Performa Termal & Efisiensi Kompresor GT')
-    e1, e2, e3 = st.columns(3)
-    e1.metric('Specific Fuel Cons (SFC)', f'{sfc_actual:.4f} {fuel_unit}/MWh')
-
-    e2.metric(
-        'Perbaikan Heat Rate (ΔHR)',
-        f'-{heat_rate_gain_kkal:.2f} kkal/kWh',
-        delta=f'-{heat_rate_gain_kj:.2f} kJ/kWh',
-    )
-    e3.metric(
-        'Efisiensi Isentropik (ηc)',
-        f'{eta_c_final:.2f} %',
-        delta=f'+{eta_c_gain:.2f} %',
-    )
+        e2.metric(
+            'Perbaikan Heat Rate (ΔHR)',
+            f'-{heat_rate_gain_kkal:.2f} kkal/kWh',
+            delta=f'-{heat_rate_gain_kj:.2f} kJ/kWh',
+        )
+        e3.metric(
+            'Efisiensi Isentropik (ηc)',
+            f'{eta_c_final:.2f} %',
+            delta=f'+{eta_c_gain:.2f} %',
+        )
