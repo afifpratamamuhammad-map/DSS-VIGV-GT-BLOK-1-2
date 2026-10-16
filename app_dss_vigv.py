@@ -124,7 +124,7 @@ st.markdown(
 )
 
 # ==============================================================================
-# INISIALISASI SESSION STATE GLOBAL UNTUK MENCEGAH MENGHILANGNYA INPUT
+# INISIALISASI SESSION STATE PERSISTEN UNTUK DCS & SIMULASI
 # ==============================================================================
 if 'dcs_set_point_load' not in st.session_state:
     st.session_state.dcs_set_point_load = 0.0
@@ -788,6 +788,17 @@ elif active_page == 'Live Verification & DCS Interlock':
         st.session_state.dcs_temp_intake = 0.0
         st.session_state.dcs_rh_pct = float(input_rh_amb)
 
+    # Callbacks Update State dari Input Widget
+    def update_load(): st.session_state.dcs_set_point_load = st.session_state.w_dcs_set_point_load
+    def update_vigv(): st.session_state.dcs_act_vigv = st.session_state.w_dcs_act_vigv
+    def update_fuel(): st.session_state.dcs_fuel_cons = st.session_state.w_dcs_fuel_cons
+    def update_tat(): st.session_state.dcs_tat = st.session_state.w_dcs_tat
+    def update_tit(): st.session_state.dcs_tit = st.session_state.w_dcs_tit
+    def update_tintake(): st.session_state.dcs_temp_intake = st.session_state.w_dcs_temp_intake
+    def update_pcd(): st.session_state.dcs_pcd = st.session_state.w_dcs_pcd
+    def update_pamb(): st.session_state.dcs_pamb_mbar = st.session_state.w_dcs_pamb_mbar
+    def update_rh(): st.session_state.dcs_rh_pct = st.session_state.w_dcs_rh_pct
+
     col_btn1, col_btn2 = st.columns([1, 4])
     with col_btn1:
         st.button('Reset Parameter Input', on_click=reset_live_inputs, use_container_width=True)
@@ -798,18 +809,18 @@ elif active_page == 'Live Verification & DCS Interlock':
 
     with col_d1:
         st.markdown('**1. Parameter Beban & Operasi GT (DCS):**')
-        dcs_set_point_load = st.number_input('Set Point Load (MW)', key='dcs_set_point_load', step=0.5)
-        dcs_act_vigv = st.number_input('Actual VIGV Angle Saat Ini (°)', key='dcs_act_vigv', step=0.1)
-        dcs_fuel_cons = st.number_input(f'Fuel Consumption DCS ({fuel_unit})', key='dcs_fuel_cons', step=0.1, format='%.2f')
-        dcs_tat = st.number_input('Exhaust Temp / TAT (°C)', key='dcs_tat', step=0.1)
-        dcs_tit = st.number_input('Turbine Inlet Temp / TIT (°C)', key='dcs_tit', step=1.0)
+        dcs_set_point_load = st.number_input('Set Point Load (MW)', value=float(st.session_state.dcs_set_point_load), step=0.5, key='w_dcs_set_point_load', on_change=update_load)
+        dcs_act_vigv = st.number_input('Actual VIGV Angle Saat Ini (°)', value=float(st.session_state.dcs_act_vigv), step=0.1, key='w_dcs_act_vigv', on_change=update_vigv)
+        dcs_fuel_cons = st.number_input(f'Fuel Consumption DCS ({fuel_unit})', value=float(st.session_state.dcs_fuel_cons), step=0.1, format='%.2f', key='w_dcs_fuel_cons', on_change=update_fuel)
+        dcs_tat = st.number_input('Exhaust Temp / TAT (°C)', value=float(st.session_state.dcs_tat), step=0.1, key='w_dcs_tat', on_change=update_tat)
+        dcs_tit = st.number_input('Turbine Inlet Temp / TIT (°C)', value=float(st.session_state.dcs_tit), step=1.0, key='w_dcs_tit', on_change=update_tit)
 
     with col_d2:
         st.markdown('**2. Parameter Tekanan & Lingkungan DCS:**')
-        dcs_temp_intake = st.number_input('Temp Intake DCS (°C)', key='dcs_temp_intake', step=0.1)
-        dcs_pcd = st.number_input('Comp Discharge Press / Pcd (bar)', key='dcs_pcd', step=0.1)
-        dcs_pamb_mbar = st.number_input('Ambient Pressure / Pamb (mbar)', key='dcs_pamb_mbar', step=1.0)
-        dcs_rh_pct = st.number_input('Ambient Humidity / RH (%)', key='dcs_rh_pct', step=1.0)
+        dcs_temp_intake = st.number_input('Temp Intake DCS (°C)', value=float(st.session_state.dcs_temp_intake), step=0.1, key='w_dcs_temp_intake', on_change=update_tintake)
+        dcs_pcd = st.number_input('Comp Discharge Press / Pcd (bar)', value=float(st.session_state.dcs_pcd), step=0.1, key='w_dcs_pcd', on_change=update_pcd)
+        dcs_pamb_mbar = st.number_input('Ambient Pressure / Pamb (mbar)', value=float(st.session_state.dcs_pamb_mbar), step=1.0, key='w_dcs_pamb_mbar', on_change=update_pamb)
+        dcs_rh_pct = st.number_input('Ambient Humidity / RH (%)', value=float(st.session_state.dcs_rh_pct), step=1.0, key='w_dcs_rh_pct', on_change=update_rh)
 
     # Validasi jika Ambient Pressure atau Temp Intake bernilai 0
     if dcs_pamb_mbar <= 0 or dcs_temp_intake <= 0:
@@ -943,6 +954,12 @@ elif active_page == 'What-If Analysis & Dynamic Simulation':
         st.session_state.sim_pamb = 1011.0
         st.session_state.sim_pcd_input = 10.8
 
+    # Callbacks Update State dari Slider Simulasi
+    def update_sim_mw(): st.session_state.sim_mw = st.session_state.w_sim_mw
+    def update_sim_temp(): st.session_state.sim_temp = st.session_state.w_sim_temp
+    def update_sim_pamb(): st.session_state.sim_pamb = st.session_state.w_sim_pamb
+    def update_sim_pcd(): st.session_state.sim_pcd_input = st.session_state.w_sim_pcd_input
+
     col_sim_btn1, _ = st.columns([1, 4])
     with col_sim_btn1:
         st.button('Reset Parameter Input', on_click=reset_sim_inputs, use_container_width=True, key='btn_reset_sim')
@@ -951,12 +968,12 @@ elif active_page == 'What-If Analysis & Dynamic Simulation':
 
     s_col1, s_col2 = st.columns(2)
     with s_col1:
-        sim_mw = st.slider('Simulasi Beban Generator (MW)', 40.0, 140.0, step=1.0, key='sim_mw')
-        sim_temp = st.slider('Simulasi Suhu Intake (°C)', 20.0, 40.0, step=0.5, key='sim_temp')
+        sim_mw = st.slider('Simulasi Beban Generator (MW)', 40.0, 140.0, value=float(st.session_state.sim_mw), step=1.0, key='w_sim_mw', on_change=update_sim_mw)
+        sim_temp = st.slider('Simulasi Suhu Intake (°C)', 20.0, 40.0, value=float(st.session_state.sim_temp), step=0.5, key='w_sim_temp', on_change=update_sim_temp)
     
     with s_col2:
-        sim_pamb = st.slider('Simulasi Ambient Pressure / Pamb (mbar)', 990.0, 1030.0, step=1.0, key='sim_pamb')
-        sim_pcd_input = st.slider('Simulasi Press Discharge Comp / Pcd (bar)', 5.0, 15.0, step=0.1, key='sim_pcd_input')
+        sim_pamb = st.slider('Simulasi Ambient Pressure / Pamb (mbar)', 990.0, 1030.0, value=float(st.session_state.sim_pamb), step=1.0, key='w_sim_pamb', on_change=update_sim_pamb)
+        sim_pcd_input = st.slider('Simulasi Press Discharge Comp / Pcd (bar)', 5.0, 15.0, value=float(st.session_state.sim_pcd_input), step=0.1, key='w_sim_pcd_input', on_change=update_sim_pcd)
 
     sim_rho, _ = calculate_moist_air_density(sim_temp, 75.0, sim_pamb)
 
