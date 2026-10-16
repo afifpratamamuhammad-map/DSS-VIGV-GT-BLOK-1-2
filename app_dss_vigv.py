@@ -630,11 +630,8 @@ if active_page == 'Live Weather & Prediksi Shift':
         value=float(input_temp_amb),
         step=0.5,
     )
-    
-    # Mengambil nilai rekomendasi rencana beban dari Halaman 2 jika ada
-    initial_load_plan = float(st.session_state.dcs_set_point_load) if st.session_state.dcs_set_point_load > 0 else 0.0
     load_mw_plan = col2.number_input(
-        'Rencana Set Point Beban (MW)', value=initial_load_plan, step=1.0
+        'Rencana Set Point Beban (MW)', value=0.0, step=1.0
     )
 
     slots = ['10:00 WIB (Pagi)', '17:00 WIB (Siang)', '00:00 WIB (Malam)']
@@ -941,31 +938,21 @@ elif active_page == 'Live Verification & DCS Interlock':
         st.plotly_chart(fig_map, use_container_width=True)
 
 # ------------------------------------------------------------------------------
-# HALAMAN 3: WHAT-IF ANALYSIS & DYNAMIC SIMULATION (SINURUT INPUT HALAMAN 2)
+# HALAMAN 3: WHAT-IF ANALYSIS & DYNAMIC SIMULATION (INDEPENDEN & DEFAULT 0.0)
 # ------------------------------------------------------------------------------
 elif active_page == 'What-If Analysis & Dynamic Simulation':
     st.subheader('Visual What-If Analysis & Dynamic Simulation')
     st.caption(
         'Simulasi multi-parameter interaktif untuk memprediksi sudut VIGV, peta kinerja, '
-        'dan estimasi laju aliran massa udara (Air Mass Flow) ke turbin gas.'
+        'dan estimasi laju aliran massa udara (Air Mass Flow) ke turbin gas secara mandiri.'
     )
 
-    # Inisialisasi awal nilai simulasi dari Halaman 2 (jika belum pernah digeser)
-    if st.session_state.sim_mw == 0.0:
-        st.session_state.sim_mw = float(st.session_state.dcs_set_point_load)
-    if st.session_state.sim_temp == 0.0:
-        st.session_state.sim_temp = float(st.session_state.dcs_temp_intake)
-    if st.session_state.sim_pamb == 0.0:
-        st.session_state.sim_pamb = float(st.session_state.dcs_pamb_mbar)
-    if st.session_state.sim_pcd_input == 0.0:
-        st.session_state.sim_pcd_input = float(st.session_state.dcs_pcd)
-
-    # Callback untuk Reset Simulasi mengikuti data Halaman 2
+    # Callback untuk Reset Simulasi ke Nilai Mandiri (0.0)
     def reset_sim_inputs():
-        st.session_state.sim_mw = float(st.session_state.dcs_set_point_load)
-        st.session_state.sim_temp = float(st.session_state.dcs_temp_intake)
-        st.session_state.sim_pamb = float(st.session_state.dcs_pamb_mbar)
-        st.session_state.sim_pcd_input = float(st.session_state.dcs_pcd)
+        st.session_state.sim_mw = 0.0
+        st.session_state.sim_temp = 0.0
+        st.session_state.sim_pamb = 0.0
+        st.session_state.sim_pcd_input = 0.0
 
     # Callbacks Update State dari Slider Simulasi
     def update_sim_mw(): st.session_state.sim_mw = st.session_state.w_sim_mw
@@ -975,7 +962,7 @@ elif active_page == 'What-If Analysis & Dynamic Simulation':
 
     col_sim_btn1, _ = st.columns([1, 4])
     with col_sim_btn1:
-        st.button('Sinkronkan / Reset Ke Data DCS (Halaman 2)', on_click=reset_sim_inputs, use_container_width=True, key='btn_reset_sim')
+        st.button('Reset Parameter Simulasi', on_click=reset_sim_inputs, use_container_width=True, key='btn_reset_sim')
 
     st.markdown('---')
 
@@ -989,7 +976,7 @@ elif active_page == 'What-If Analysis & Dynamic Simulation':
         sim_pcd_input = st.slider('Simulasi Press Discharge Comp / Pcd (bar)', 0.0, 15.0, value=float(st.session_state.sim_pcd_input), step=0.1, key='w_sim_pcd_input', on_change=update_sim_pcd)
 
     if sim_mw <= 0 or sim_temp <= 0 or sim_pamb <= 0:
-        st.warning('Parameter simulasi masih 0 MW / 0 °C. Masukkan data di Halaman 2 (Live Verification) atau geser slider di atas.')
+        st.warning('Parameter simulasi bernilai 0. Silakan geser slider di atas untuk memulai simulasi.')
     else:
         sim_rho, _ = calculate_moist_air_density(sim_temp, 75.0, sim_pamb)
 
