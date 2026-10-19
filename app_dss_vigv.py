@@ -192,12 +192,12 @@ def calculate_hrsg_co_optimization(load_mw, tat_c, air_mass_flow_kg_s, fuel_cons
     return round(flue_gas_mass_flow_kg_s, 1), round(q_exhaust_mwt, 2), round(steam_gen_ton_h, 1), round(stg_power_mw, 1)
 
 # ==============================================================================
-# FITUR 4: SOFT-SENSOR DEGRADASI & FOULING KOMPRESOR GT (COMPRESSOR HEALTH INDEX)
+# FITUR 4: SOFT-SENSOR DEGRADASI & FOULING KOMPRESOR GT (TERKALIBRASI TROPIS & POST-MI)
 # ==============================================================================
 def calculate_compressor_fouling_index(pcd_act, pamb_bar, temp_intake_c, mw_act, vigv_act, dp_filter_mbar=6.0):
     """
     Soft-Sensor Pemisahan Penurunan Kinerja Akibat Filter Intake vs Fouling Sudu Kompresor GT
-    dengan Koreksi Dinamis VIGV Throttling Effect pada Part-Load.
+    dengan Koreksi Suhu Tropis Ekstrem (hingga 37°C) & Threshold Alarm 5.0% Post-MI.
     """
     if mw_act <= 0 or pcd_act <= 0 or temp_intake_c <= 0:
         return 0.0, 0.0, 0.0, "UNIT OFFLINE / STANDBY", "Tidak ada aksi."
@@ -206,8 +206,8 @@ def calculate_compressor_fouling_index(pcd_act, pamb_bar, temp_intake_c, mw_act,
     p_inlet_comp_bar = max(0.8, pamb_bar - dp_filter_bar)
     pr_actual = pcd_act / p_inlet_comp_bar
 
-    # 1. Base Pr Clean GT13E1 (Kondisi Base Load Clean)
-    pr_clean_base = (10.2 + (mw_act / 140.0) * 3.8) * (1.0 - (temp_intake_c - 15.0) * 0.003)
+    # 1. Base Pr Clean GT13E1 dengan Koreksi Suhu Tropis Pesisir (0.0040 per °C)
+    pr_clean_base = (10.2 + (mw_act / 140.0) * 3.8) * (1.0 - (temp_intake_c - 15.0) * 0.004)
     
     # 2. Koreksi VIGV Throttling Effect untuk Beban Parsial (Part-Load)
     vigv_optimal = get_ideal_vigv_lookup_table(mw_act, temp_intake_c)
@@ -220,19 +220,19 @@ def calculate_compressor_fouling_index(pcd_act, pamb_bar, temp_intake_c, mw_act,
     fouling_index_pct = max(0.0, (1.0 - pr_ratio) * 100.0)
     eta_drop_pct = fouling_index_pct * 0.45
 
-    # 4. Filter Penilaian Khusus Part-Load vs Base-Load
+    # 4. Filter Penilaian & Ambang Batas Alarm (Batas Clean: 5.0%)
     if mw_act < 115.0:
-        if fouling_index_pct < 3.5:
+        if fouling_index_pct < 5.0:
             status_health = "PART-LOAD NORMAL (VIGV Throttling Mode)"
             rec_action = "Penurunan efisiensi akibat pembatasan VIGV part-load. Kompresor dalam kondisi sehat."
         else:
             status_health = "PART-LOAD FOULING DETECTED"
             rec_action = "Terdeteksi indikasi kekotoran awal di luar efek penutupan VIGV."
     else:
-        if fouling_index_pct < 2.0:
+        if fouling_index_pct < 5.0:
             status_health = "BASE-LOAD KOMPRESOR BERSIH (Optimal)"
             rec_action = "Kondisi sudu kompresor sangat baik. Lanjutkan operasi normal."
-        elif 2.0 <= fouling_index_pct < 4.5:
+        elif 5.0 <= fouling_index_pct < 8.0:
             status_health = "BASE-LOAD FOULING RINGAN"
             rec_action = "Rekomendasi Online Washing saat pergantian shift."
         else:
@@ -770,7 +770,7 @@ if active_page == 'Live Weather & Prediksi Shift':
     if api_available and use_live_api:
         st.markdown('---')
         st.subheader(
-            'Tabel Prediksi Cuaca Jam-Jaman PLTGU Priok (6 Jam Ke Depan)'
+            'Tabel Prediksi Cuaca PLTGU UBP Priok (6 Jam Ke Depan)'
         )
         hourly_data = weather_json.get('hourly', {})
         df_hourly = pd.DataFrame({
@@ -873,6 +873,7 @@ if active_page == 'Live Weather & Prediksi Shift':
             'Model .pkl lokal belum diunggah ke repositori. Tampilan saat'
             ' ini menggunakan Live API standar.'
         )
+
 # ------------------------------------------------------------------------------
 # HALAMAN 2: LIVE VERIFICATION & DCS SAFETY
 # ------------------------------------------------------------------------------
@@ -1042,6 +1043,7 @@ elif active_page == 'Live Verification & DCS Interlock':
             dcs_set_point_load, dcs_pcd, target_vigv_dcs, dcs_pamb_mbar/1000.0
         )
         st.plotly_chart(fig_map, use_container_width=True)
+
 # ------------------------------------------------------------------------------
 # HALAMAN 3: WHAT-IF ANALYSIS & DYNAMIC SIMULATION (INDEPENDEN & DEFAULT 0.0)
 # ------------------------------------------------------------------------------
@@ -1133,6 +1135,7 @@ elif active_page == 'What-If Analysis & Dynamic Simulation':
         hrsg_c2.metric('Energi Panas Gas Buang (Q_exhaust)', f'{q_exhaust_mwt:.2f} MWt')
         hrsg_c3.metric('Estimasi Produksi Uap HRSG', f'{steam_ton_h:.1f} Ton/jam')
         hrsg_c4.metric('Estimasi Daya Turbin Uap (STG)', f'{stg_mw:.1f} MW')
+
 # ------------------------------------------------------------------------------
 # HALAMAN 4: MANFAAT & PREDIKSI FILTER RUL (PURE DCS-DRIVEN)
 # ------------------------------------------------------------------------------
@@ -1167,10 +1170,12 @@ elif active_page == 'Manfaat & Prediksi Filter RUL':
 
         dcs_pamb_bar = dcs_pamb_mbar / 1000.0
 
+        # KALIBRASI BASELINE PCD UNTUK TROPIS EKSTREM (HINGGA 37°C) & POST-MI
         vigv_optimal_ref = get_ideal_vigv_lookup_table(dcs_set_point_load, dcs_temp_intake)
         vigv_ratio_corr = np.clip(dcs_act_vigv / vigv_optimal_ref, 0.7, 1.0) if vigv_optimal_ref > 0 else 1.0
 
-        pcd_expected_clean = (dcs_pamb_bar * 11.15) * (dcs_set_point_load / 104.0) ** 0.1 * vigv_ratio_corr
+        temp_corr_pcd = 1.0 - ((dcs_temp_intake - 15.0) * 0.0038) if dcs_temp_intake > 15.0 else 1.0
+        pcd_expected_clean = (dcs_pamb_bar * 11.15) * (dcs_set_point_load / 104.0) ** 0.1 * vigv_ratio_corr * temp_corr_pcd
         pcd_deficit = max(pcd_expected_clean - dcs_pcd, 0.0)
 
         virtual_dp_filter_bar = 0.006 + (pcd_deficit * 0.02)
@@ -1279,9 +1284,9 @@ elif active_page == 'Manfaat & Prediksi Filter RUL':
         fc2.metric('Penurunan Efisiensi (Δη_comp)', f'-{f_eta_drop:.2f} %', delta='Degradasi Sudu')
         fc3.metric('Status Kesehatan Kompresor', f_status)
 
-        if f_index >= 4.5:
+        if f_index >= 8.0:
             st.error(f'**Rekomendasi Pemeliharaan:** {f_rec}')
-        elif f_index >= 2.0:
+        elif f_index >= 5.0:
             st.warning(f'**Rekomendasi Pemeliharaan:** {f_rec}')
         else:
             st.success(f'**Rekomendasi Pemeliharaan:** {f_rec}')
