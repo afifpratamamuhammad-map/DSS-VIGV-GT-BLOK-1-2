@@ -191,12 +191,14 @@ def calculate_hrsg_co_optimization(load_mw, tat_c, air_mass_flow_kg_s, fuel_cons
 
     return round(flue_gas_mass_flow_kg_s, 1), round(q_exhaust_mwt, 2), round(steam_gen_ton_h, 1), round(stg_power_mw, 1)
 
-
 # ==============================================================================
 # FITUR 4: SOFT-SENSOR DEGRADASI & FOULING KOMPRESOR GT (COMPRESSOR HEALTH INDEX)
 # ==============================================================================
 def calculate_compressor_fouling_index(pcd_act, pamb_bar, temp_intake_c, mw_act, vigv_act, dp_filter_mbar=6.0):
-    """Soft-Sensor Pemisahan Penurunan Kinerja Akibat Filter Intake vs Fouling Sudu Kompresor GT."""
+    """
+    Soft-Sensor Pemisahan Penurunan Kinerja Akibat Filter Intake vs Fouling Sudu Kompresor GT
+    dengan Koreksi Dinamis VIGV Throttling Effect pada Part-Load.
+    """
     if mw_act <= 0 or pcd_act <= 0 or temp_intake_c <= 0:
         return 0.0, 0.0, 0.0, "UNIT OFFLINE / STANDBY", "Tidak ada aksi."
 
@@ -204,28 +206,40 @@ def calculate_compressor_fouling_index(pcd_act, pamb_bar, temp_intake_c, mw_act,
     p_inlet_comp_bar = max(0.8, pamb_bar - dp_filter_bar)
     pr_actual = pcd_act / p_inlet_comp_bar
 
-    # Model Pressure Ratio Clean Compressor Baseline GT13E1
-    pr_clean = (10.2 + (mw_act / 140.0) * 3.8) * (1.0 - (temp_intake_c - 15.0) * 0.003)
-    pr_ratio = pr_actual / pr_clean if pr_clean > 0 else 1.0
+    # 1. Base Pr Clean GT13E1 (Kondisi Base Load Clean)
+    pr_clean_base = (10.2 + (mw_act / 140.0) * 3.8) * (1.0 - (temp_intake_c - 15.0) * 0.003)
+    
+    # 2. Koreksi VIGV Throttling Effect untuk Beban Parsial (Part-Load)
+    vigv_optimal = get_ideal_vigv_lookup_table(mw_act, temp_intake_c)
+    vigv_factor = np.clip(vigv_act / vigv_optimal, 0.7, 1.0) if vigv_optimal > 0 else 1.0
+    
+    # 3. Pr Clean Terkoreksi Mode Operasi
+    pr_clean_adjusted = pr_clean_base * vigv_factor
+
+    pr_ratio = pr_actual / pr_clean_adjusted if pr_clean_adjusted > 0 else 1.0
     fouling_index_pct = max(0.0, (1.0 - pr_ratio) * 100.0)
     eta_drop_pct = fouling_index_pct * 0.45
 
-    if fouling_index_pct < 2.0:
-        status_health = "KOMPRESOR BERSIH (Optimal Performance)"
-        rec_action = "Kondisi sudu kompresor sangat baik. Lanjutkan operasi normal."
-    elif 2.0 <= fouling_index_pct < 4.5:
-        status_health = "FOULING RINGAN (Minor Drop)"
-        rec_action = "Terdeteksi kekotoran tipis sudu. Rekomendasi Online Washing saat pergantian shift."
-    elif 4.5 <= fouling_index_pct < 7.0:
-        status_health = "FOULING SEDANG (Moderate Drop)"
-        rec_action = "Agendakan Offline Compressor Washing pada jadwal standby terdekat."
+    # 4. Filter Penilaian Khusus Part-Load vs Base-Load
+    if mw_act < 115.0:
+        if fouling_index_pct < 3.5:
+            status_health = "PART-LOAD NORMAL (VIGV Throttling Mode)"
+            rec_action = "Penurunan efisiensi akibat pembatasan VIGV part-load. Kompresor dalam kondisi sehat."
+        else:
+            status_health = "PART-LOAD FOULING DETECTED"
+            rec_action = "Terdeteksi indikasi kekotoran awal di luar efek penutupan VIGV."
     else:
-        status_health = "FOULING BERAT (Critical Drop)"
-        rec_action = "CRITICAL DEGRADATION! Lakukan Offline Washing & Borescope Inspection secepatnya."
+        if fouling_index_pct < 2.0:
+            status_health = "BASE-LOAD KOMPRESOR BERSIH (Optimal)"
+            rec_action = "Kondisi sudu kompresor sangat baik. Lanjutkan operasi normal."
+        elif 2.0 <= fouling_index_pct < 4.5:
+            status_health = "BASE-LOAD FOULING RINGAN"
+            rec_action = "Rekomendasi Online Washing saat pergantian shift."
+        else:
+            status_health = "BASE-LOAD FOULING BERAT"
+            rec_action = "CRITICAL DEGRADATION! Lakukan Offline Washing & Borescope Inspection secepatnya."
 
     return round(fouling_index_pct, 2), round(eta_drop_pct, 2), round(pr_actual, 2), status_health, rec_action
-
-
 # ==============================================================================
 # 2. LOAD MODEL PROPHET & FUNGSI PREDIKSI AI WEATHER
 # ==============================================================================
@@ -450,6 +464,11 @@ if use_live_api and api_available:
     input_temp_amb = live_temp
     input_rh_amb = live_rh
     input_pamb_mbar = live_press
+
+    # SINKRONISASI OTOMATIS: HANYA RH DARI API METEO KE DCS LIVE VERIFICATION
+    if 'auto_rh_synced' not in st.session_state or st.session_state.auto_rh_synced != float(live_rh):
+        st.session_state.dcs_rh_pct = float(live_rh)
+        st.session_state.auto_rh_synced = float(live_rh)
 else:
     if not api_available and use_live_api:
         st.sidebar.warning('Gagal koneksi API. Menggunakan Mode Manual.')
@@ -853,13 +872,13 @@ if active_page == 'Live Weather & Prediksi Shift':
             'Model .pkl lokal belum diunggah ke repositori. Tampilan saat'
             ' ini menggunakan Live API standar.'
         )
-
 # ------------------------------------------------------------------------------
 # HALAMAN 2: LIVE VERIFICATION & DCS SAFETY
 # ------------------------------------------------------------------------------
 elif active_page == 'Live Verification & DCS Interlock':
     st.subheader('DCS Inputs & Protective Limit Monitor')
 
+    # Reset Callback: Temp Intake & Pamb murni 0.0 (Manual DCS), RH otomatis dari API Open-Meteo
     def reset_live_inputs():
         st.session_state.dcs_set_point_load = 0.0
         st.session_state.dcs_act_vigv = 0.0
@@ -867,10 +886,11 @@ elif active_page == 'Live Verification & DCS Interlock':
         st.session_state.dcs_tat = 0.0
         st.session_state.dcs_tit = 0.0
         st.session_state.dcs_pcd = 0.0
-        st.session_state.dcs_pamb_mbar = 0.0
-        st.session_state.dcs_temp_intake = 0.0
-        st.session_state.dcs_rh_pct = float(input_rh_amb)
+        st.session_state.dcs_pamb_mbar = 0.0    # Murni Manual DCS (Default 0.0)
+        st.session_state.dcs_temp_intake = 0.0   # Murni Manual DCS (Default 0.0)
+        st.session_state.dcs_rh_pct = float(live_rh) if (use_live_api and api_available) else float(input_rh_amb)
 
+    # Callbacks Update State dari Input Widget
     def update_load(): st.session_state.dcs_set_point_load = st.session_state.w_dcs_set_point_load
     def update_vigv(): st.session_state.dcs_act_vigv = st.session_state.w_dcs_act_vigv
     def update_fuel(): st.session_state.dcs_fuel_cons = st.session_state.w_dcs_fuel_cons
@@ -902,7 +922,11 @@ elif active_page == 'Live Verification & DCS Interlock':
         dcs_temp_intake = st.number_input('Temp Intake DCS (°C)', value=float(st.session_state.dcs_temp_intake), step=0.1, key='w_dcs_temp_intake', on_change=update_tintake)
         dcs_pcd = st.number_input('Comp Discharge Press / Pcd (bar)', value=float(st.session_state.dcs_pcd), step=0.1, key='w_dcs_pcd', on_change=update_pcd)
         dcs_pamb_mbar = st.number_input('Ambient Pressure / Pamb (mbar)', value=float(st.session_state.dcs_pamb_mbar), step=1.0, key='w_dcs_pamb_mbar', on_change=update_pamb)
+        
+        # Ambient Humidity Widget dengan Sinkronisasi Otomatis API Open-Meteo
         dcs_rh_pct = st.number_input('Ambient Humidity / RH (%)', value=float(st.session_state.dcs_rh_pct), step=1.0, key='w_dcs_rh_pct', on_change=update_rh)
+        if use_live_api and api_available:
+            st.caption(f'🟢 Auto-Synced Open-Meteo RH ({live_rh:.0f}%)')
 
     if dcs_pamb_mbar <= 0 or dcs_temp_intake <= 0:
         rho_live_dcs = 1.165
@@ -1017,7 +1041,6 @@ elif active_page == 'Live Verification & DCS Interlock':
             dcs_set_point_load, dcs_pcd, target_vigv_dcs, dcs_pamb_mbar/1000.0
         )
         st.plotly_chart(fig_map, use_container_width=True)
-
 # ------------------------------------------------------------------------------
 # HALAMAN 3: WHAT-IF ANALYSIS & DYNAMIC SIMULATION (INDEPENDEN & DEFAULT 0.0)
 # ------------------------------------------------------------------------------
@@ -1109,7 +1132,6 @@ elif active_page == 'What-If Analysis & Dynamic Simulation':
         hrsg_c2.metric('Energi Panas Gas Buang (Q_exhaust)', f'{q_exhaust_mwt:.2f} MWt')
         hrsg_c3.metric('Estimasi Produksi Uap HRSG', f'{steam_ton_h:.1f} Ton/jam')
         hrsg_c4.metric('Estimasi Daya Turbin Uap (STG)', f'{stg_mw:.1f} MW')
-
 # ------------------------------------------------------------------------------
 # HALAMAN 4: MANFAAT & PREDIKSI FILTER RUL (PURE DCS-DRIVEN)
 # ------------------------------------------------------------------------------
@@ -1146,14 +1168,14 @@ elif active_page == 'Manfaat & Prediksi Filter RUL':
 
         dcs_pamb_bar = dcs_pamb_mbar / 1000.0
 
-        pcd_expected_clean = (dcs_pamb_bar * 11.15) * (
-            dcs_set_point_load / 104.0
-        ) ** 0.1
+    	vigv_optimal_ref = get_ideal_vigv_lookup_table(dcs_set_point_load, dcs_temp_intake)
+        vigv_ratio_corr = np.clip(dcs_act_vigv / vigv_optimal_ref, 0.7, 1.0) if vigv_optimal_ref > 0 else 1.0
+
+        pcd_expected_clean = (dcs_pamb_bar * 11.15) * (dcs_set_point_load / 104.0) ** 0.1 * vigv_ratio_corr
         pcd_deficit = max(pcd_expected_clean - dcs_pcd, 0.0)
 
         virtual_dp_filter_bar = 0.006 + (pcd_deficit * 0.02)
         virtual_dp_mbar = virtual_dp_filter_bar * 1000.0
-
         dp_warning_limit_bar = 0.015
         dp_replace_limit_bar = 0.019
 
