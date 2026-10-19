@@ -240,6 +240,7 @@ def calculate_compressor_fouling_index(pcd_act, pamb_bar, temp_intake_c, mw_act,
             rec_action = "CRITICAL DEGRADATION! Lakukan Offline Washing & Borescope Inspection secepatnya."
 
     return round(fouling_index_pct, 2), round(eta_drop_pct, 2), round(pr_actual, 2), status_health, rec_action
+
 # ==============================================================================
 # 2. LOAD MODEL PROPHET & FUNGSI PREDIKSI AI WEATHER
 # ==============================================================================
@@ -1153,19 +1154,18 @@ elif active_page == 'Manfaat & Prediksi Filter RUL':
         rho_live_dcs, _ = calculate_moist_air_density(
             dcs_temp_intake, dcs_rh_pct, dcs_pamb_mbar
         )
-        _, trim_live, f_sav_live, rp_sav_live, co2_live, status_msg_live = (
-            calculate_vigv_trim(
-                dcs_temp_intake,
-                dcs_set_point_load,
-                act_vigv=dcs_act_vigv,
-                rho_moist=rho_live_dcs,
-                mode_simulasi=False,
-                base_saving_rate=base_saving_rate,
-                price_per_unit=price_per_unit,
-                co2_factor=co2_factor
-            )
+        _, trim_live, f_sav_live, rp_sav_live, co2_live, status_msg_live = calculate_vigv_trim(
+            dcs_temp_intake,
+            dcs_set_point_load,
+            act_vigv=dcs_act_vigv,
+            rho_moist=rho_live_dcs,
+            mode_simulasi=False,
+            base_saving_rate=base_saving_rate,
+            price_per_unit=price_per_unit,
+            co2_factor=co2_factor
         )
-       dcs_pamb_bar = dcs_pamb_mbar / 1000.0
+
+        dcs_pamb_bar = dcs_pamb_mbar / 1000.0
 
         vigv_optimal_ref = get_ideal_vigv_lookup_table(dcs_set_point_load, dcs_temp_intake)
         vigv_ratio_corr = np.clip(dcs_act_vigv / vigv_optimal_ref, 0.7, 1.0) if vigv_optimal_ref > 0 else 1.0
