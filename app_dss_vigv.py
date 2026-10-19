@@ -1165,10 +1165,9 @@ elif active_page == 'Manfaat & Prediksi Filter RUL':
                 co2_factor=co2_factor
             )
         )
+       dcs_pamb_bar = dcs_pamb_mbar / 1000.0
 
-        dcs_pamb_bar = dcs_pamb_mbar / 1000.0
-
-    	vigv_optimal_ref = get_ideal_vigv_lookup_table(dcs_set_point_load, dcs_temp_intake)
+        vigv_optimal_ref = get_ideal_vigv_lookup_table(dcs_set_point_load, dcs_temp_intake)
         vigv_ratio_corr = np.clip(dcs_act_vigv / vigv_optimal_ref, 0.7, 1.0) if vigv_optimal_ref > 0 else 1.0
 
         pcd_expected_clean = (dcs_pamb_bar * 11.15) * (dcs_set_point_load / 104.0) ** 0.1 * vigv_ratio_corr
