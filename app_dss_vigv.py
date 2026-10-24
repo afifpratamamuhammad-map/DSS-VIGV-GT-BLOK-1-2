@@ -152,7 +152,7 @@ if 'dcs_pamb_mbar' not in st.session_state:
 if 'dcs_temp_intake' not in st.session_state:
     st.session_state.dcs_temp_intake = 0.0
 if 'dcs_rh_pct' not in st.session_state:
-    st.session_state.dcs_rh_pct = 78.0
+    st.session_state.dcs_rh_pct = 78.0  # Default Fallback Baseline Priok
 
 if 'sim_mw' not in st.session_state:
     st.session_state.sim_mw = 0.0
@@ -315,38 +315,70 @@ def predict_weather_24h_prophet(m_temp, m_rh, anchor_temp, anchor_rh):
 
 
 # ==============================================================================
-# 3. FUNGSI PERHITUNGAN FISIKA UDARA BASAH & VIGV TRIM (6 RETURN VALUES)
+# 3. FUNGSI PERHITUNGAN FISIKA UDARA BASAH & VIGV TRIM (SOLUSI 1 & 2 INTEGRATED)
 # ==============================================================================
-def calculate_moist_air_density(temp_c, rh_pct, press_mbar):
-    """Kalkulasi Kerapatan Udara Basah (Moist Air Density - kg/m³)"""
-    if temp_c is None or rh_pct is None or press_mbar is None or press_mbar <= 0 or temp_c <= 0:
+def calculate_moist_air_density(t_intake_c, rh_percent=78.0, p_ambien_hpa=1013.25):
+    """
+    Kalkulasi Kerapatan Udara Basah (Moist Air Density - kg/m³)
+    Fallback otomatis ke nilai RH Average Pesisir Tanjung Priok (78.0%) jika sensor DCS/API offline.
+    """
+    if t_intake_c is None or p_ambien_hpa is None or p_ambien_hpa <= 0 or t_intake_c <= 0:
         return 1.165, 15.0
 
-    p_sat = 6.1078 * math.pow(10, (7.5 * temp_c) / (237.3 + temp_c))
-    p_v = (rh_pct / 100.0) * p_sat
-    p_d = press_mbar - p_v
+    # Fallback jika RH bernilai None atau <= 0
+    effective_rh = rh_percent if (rh_percent is not None and rh_percent > 0) else 78.0
 
-    t_k = temp_c + 273.15
-    r_d = 287.058
-    r_v = 461.495
+    # 1. Tekanan uap jenuh (hPa)
+    p_sat = 6.1078 * (10 ** ((7.5 * t_intake_c) / (237.3 + t_intake_c)))
 
-    rho_d = (p_d * 100.0) / (r_d * t_k)
-    rho_v = (p_v * 100.0) / (r_v * t_k)
+    # 2. Tekanan parsial uap air & udara kering (hPa)
+    p_v = (effective_rh / 100.0) * p_sat
+    p_d = p_ambien_hpa - p_v
+
+    # 3. Kerapatan udara basah (kg/m3)
+    t_kelvin = t_intake_c + 273.15
+    rho_d = (p_d * 100) / (287.058 * t_kelvin)
+    rho_v = (p_v * 100) / (461.495 * t_kelvin)
 
     rho_moist = rho_d + rho_v
     return round(rho_moist, 4), round(p_v, 2)
 
 
+def get_ideal_vigv_with_rh(load_mw, t_intake_c, rh_percent=78.0):
+    """
+    Kalkulasi Bukaan VIGV Ideal Berbasis Koreksi Presisi Density Ratio Air Mass Flow.
+    Gunakan gabungan Solusi 1 (Live API Open-Meteo) dan Solusi 2 (Fallback 78% RH).
+    """
+    # Ambil Base VIGV dari Look-Up Table spesifik GT13E1
+    base_vigv = get_ideal_vigv_lookup_table(load_mw, t_intake_c)
+
+    # Hitung Kerapatan Udara Basah (Aktual vs ISO Reference 30°C, RH 70%)
+    rho_actual, _ = calculate_moist_air_density(t_intake_c, rh_percent)
+    rho_ref, _ = calculate_moist_air_density(30.0, 70.0)
+
+    # Koreksi offset berdasarkan deviasi kerapatan udara
+    density_ratio = (rho_ref - rho_actual) / rho_ref
+
+    if load_mw < 120.0:  # Khusus Part-Load
+        rh_correction = density_ratio * 2.5  # Koefisien kompensasi VIGV
+        target_vigv = base_vigv + rh_correction
+    else:
+        target_vigv = 71.98  # Base Load Max Limit
+
+    return round(target_vigv, 2)
+
+
 def calculate_vigv_trim(
-    t_intake, load_mw, act_vigv=62.7, rho_moist=1.165, mode_simulasi=False,
+    t_intake, load_mw, act_vigv=62.7, rh_percent=78.0, rho_moist=1.165, mode_simulasi=False,
     base_saving_rate=0.247, price_per_unit=4025000.0, co2_factor=1980.0,
     step_rounding=0.5
 ):
-    """Kalkulasi VIGV Trim Otomatis Berbasis Digital Twin Look-Up Table GT13E1."""
+    """Kalkulasi VIGV Trim Otomatis Berbasis Digital Twin Look-Up Table GT13E1 + Presisi RH."""
     if load_mw <= 0 or t_intake <= 0:
         return 0.0, 0.0, 0.0, 0.0, 0.0, 'UNIT OFFLINE / NO INPUT'
 
-    target_angle_ideal = get_ideal_vigv_lookup_table(load_mw, t_intake)
+    # Menggunakan kalkulasi presisi get_ideal_vigv_with_rh
+    target_angle_ideal = get_ideal_vigv_with_rh(load_mw, t_intake, rh_percent)
 
     if mode_simulasi:
         base_trim_temp = (t_intake - 20.0) * 0.1
@@ -397,7 +429,7 @@ def predict_intake_temp_adaptive(t_ambient, load_mw, hour):
 
 
 # ==============================================================================
-# 4. INTEGRASI API CUACA OPEN-METEO
+# 4. INTEGRASI API CUACA OPEN-METEO (SOLUSI 1 + FALLBACK SOLUSI 2)
 # ==============================================================================
 LATITUDE = -6.1102
 LONGITUDE = 106.8671
@@ -428,12 +460,14 @@ def fetch_priok_weather_api():
 weather_json = fetch_priok_weather_api()
 api_available = weather_json is not None
 
+# Kombinasi Solusi 1 (Live API) & Solusi 2 (Fallback 78% RH Baseline Priok)
 if api_available:
     curr_weather = weather_json.get('current', {})
     live_temp = curr_weather.get('temperature_2m', 31.5)
     live_rh = curr_weather.get('relative_humidity_2m', 78.0)
     live_press = curr_weather.get('surface_pressure') or 1011.0
 else:
+    # Fallback Solusi 2 jika koneksi API terputus
     live_temp, live_rh, live_press = 31.5, 78.0, 1011.0
 
 # ==============================================================================
@@ -474,13 +508,13 @@ if use_live_api and api_available:
     input_rh_amb = live_rh
     input_pamb_mbar = live_press
 
-    # SINKRONISASI OTOMATIS: HANYA RH DARI API METEO KE DCS LIVE VERIFICATION
+    # SINKRONISASI OTOMATIS: RH LIVE DARI API METEO KE SESSION STATE DCS
     if 'auto_rh_synced' not in st.session_state or st.session_state.auto_rh_synced != float(live_rh):
         st.session_state.dcs_rh_pct = float(live_rh)
         st.session_state.auto_rh_synced = float(live_rh)
 else:
     if not api_available and use_live_api:
-        st.sidebar.warning('Gagal koneksi API. Menggunakan Mode Manual.')
+        st.sidebar.warning('Gagal koneksi API. Menggunakan Fallback Mode (78% RH Baseline).')
     input_temp_amb = st.sidebar.number_input(
         'Temp Ambeien Manual (°C):', value=31.5, step=0.1
     )
@@ -530,7 +564,7 @@ st.markdown(
 )
 
 status_dot_class = "status-dot-active" if (use_live_api and api_available) else "status-dot-manual"
-status_text = "DCS TELEMETRY & API STREAMING ACTIVE" if (use_live_api and api_available) else "MANUAL / SIMULATION MODE"
+status_text = "DCS TELEMETRY & API STREAMING ACTIVE" if (use_live_api and api_available) else "MANUAL / FALLBACK MODE (78% RH)"
 
 st.markdown(
     f"""
@@ -725,7 +759,7 @@ if active_page == 'Live Weather & Prediksi Shift':
     wc1.metric(
         'Suhu Ambeien (Tamb)',
         f'{input_temp_amb:.1f} °C',
-        delta='Live API Open-Meteo' if use_live_api else 'Manual Mode',
+        delta='Live API Open-Meteo' if use_live_api else 'Fallback Baseline',
     )
     wc2.metric(
         'Kelembapan Relatif (RH)',
@@ -773,7 +807,7 @@ if active_page == 'Live Weather & Prediksi Shift':
                 t_pred, input_rh_amb, input_pamb_mbar
             )
             _, trim_p, f_sav_p, rp_sav_p, co2_p, _ = calculate_vigv_trim(
-                t_pred, load_mw_plan, rho_moist=rho_slot, mode_simulasi=True,
+                t_pred, load_mw_plan, rh_percent=input_rh_amb, rho_moist=rho_slot, mode_simulasi=True,
                 base_saving_rate=base_saving_rate, price_per_unit=price_per_unit, co2_factor=co2_factor
             )
 
@@ -806,6 +840,7 @@ if active_page == 'Live Weather & Prediksi Shift':
             return calculate_vigv_trim(
                 row['Est_Temp_Intake_°C'],
                 load_mw_plan,
+                rh_percent=row['Humidity_RH_%'],
                 rho_moist=rho_row,
                 mode_simulasi=True,
                 base_saving_rate=base_saving_rate,
@@ -835,6 +870,7 @@ if active_page == 'Live Weather & Prediksi Shift':
             return calculate_vigv_trim(
                 row['Prediksi_Temp_°C'] + 1.2,
                 load_mw_plan,
+                rh_percent=row['Prediksi_RH_%'],
                 rho_moist=rho_row,
                 mode_simulasi=True,
                 base_saving_rate=base_saving_rate,
@@ -897,7 +933,7 @@ if active_page == 'Live Weather & Prediksi Shift':
 elif active_page == 'Live Verification & DCS Interlock':
     st.subheader('DCS Inputs & Protective Limit Monitor')
 
-    # Reset Callback: Temp Intake & Pamb murni 0.0 (Manual DCS), RH otomatis dari API Open-Meteo
+    # Reset Callback: Temp Intake & Pamb murni 0.0 (Manual DCS), RH otomatis dari API Open-Meteo atau Fallback 78%
     def reset_live_inputs():
         st.session_state.dcs_set_point_load = 0.0
         st.session_state.dcs_act_vigv = 0.0
@@ -907,7 +943,7 @@ elif active_page == 'Live Verification & DCS Interlock':
         st.session_state.dcs_pcd = 0.0
         st.session_state.dcs_pamb_mbar = 0.0    # Murni Manual DCS (Default 0.0)
         st.session_state.dcs_temp_intake = 0.0   # Murni Manual DCS (Default 0.0)
-        st.session_state.dcs_rh_pct = float(live_rh) if (use_live_api and api_available) else float(input_rh_amb)
+        st.session_state.dcs_rh_pct = float(live_rh) if (use_live_api and api_available) else 78.0
 
     # Callbacks Update State dari Input Widget
     def update_load(): st.session_state.dcs_set_point_load = st.session_state.w_dcs_set_point_load
@@ -942,10 +978,12 @@ elif active_page == 'Live Verification & DCS Interlock':
         dcs_pcd = st.number_input('Comp Discharge Press / Pcd (bar)', value=float(st.session_state.dcs_pcd), step=0.1, key='w_dcs_pcd', on_change=update_pcd)
         dcs_pamb_mbar = st.number_input('Ambient Pressure / Pamb (mbar)', value=float(st.session_state.dcs_pamb_mbar), step=1.0, key='w_dcs_pamb_mbar', on_change=update_pamb)
         
-        # Ambient Humidity Widget dengan Sinkronisasi Otomatis API Open-Meteo
+        # Ambient Humidity Widget dengan Sinkronisasi Otomatis API Open-Meteo & Fallback 78% RH
         dcs_rh_pct = st.number_input('Ambient Humidity / RH (%)', value=float(st.session_state.dcs_rh_pct), step=1.0, key='w_dcs_rh_pct', on_change=update_rh)
         if use_live_api and api_available:
             st.caption(f'🟢 Auto-Synced Open-Meteo RH ({live_rh:.0f}%)')
+        else:
+            st.caption('🟡 Using Fallback Baseline RH (78% Priok)')
 
     if dcs_pamb_mbar <= 0 or dcs_temp_intake <= 0:
         rho_live_dcs = 1.165
@@ -956,6 +994,7 @@ elif active_page == 'Live Verification & DCS Interlock':
         dcs_temp_intake,
         dcs_set_point_load,
         act_vigv=dcs_act_vigv,
+        rh_percent=dcs_rh_pct,
         rho_moist=rho_live_dcs,
         mode_simulasi=False,
         base_saving_rate=base_saving_rate,
@@ -1103,10 +1142,10 @@ elif active_page == 'What-If Analysis & Dynamic Simulation':
         sim_rho, _ = calculate_moist_air_density(sim_temp, 75.0, sim_pamb)
 
         _, sim_trim, sim_fsav, sim_rpsav, sim_co2, _ = calculate_vigv_trim(
-            sim_temp, sim_mw, rho_moist=sim_rho, mode_simulasi=True,
+            sim_temp, sim_mw, rh_percent=75.0, rho_moist=sim_rho, mode_simulasi=True,
             base_saving_rate=base_saving_rate, price_per_unit=price_per_unit, co2_factor=co2_factor
         )
-        sim_optimal_angle = get_ideal_vigv_lookup_table(sim_mw, sim_temp)
+        sim_optimal_angle = get_ideal_vigv_with_rh(sim_mw, sim_temp, 75.0)
 
         base_volumetric_flow = 395.0  # m3/s
         pamb_bar = sim_pamb / 1000.0
@@ -1138,7 +1177,7 @@ elif active_page == 'What-If Analysis & Dynamic Simulation':
             st.markdown('---')
             
             st.metric('Rekomendasi VIGV Trim', f'+{sim_trim:.1f} °')
-            st.metric('Sudut VIGV Optimal (Look-Up Table)', f'{sim_optimal_angle:.1f} °')
+            st.metric('Sudut VIGV Optimal (Look-Up Table + RH)', f'{sim_optimal_angle:.1f} °')
             st.metric('Estimasi Hemat BBM', f'{sim_fsav:.3f} {fuel_unit}')
             st.metric('Estimasi Hemat Biaya', f'Rp {sim_rpsav:,.0f} / jam')
             st.metric('Reduksi Emisi CO2', f'{sim_co2:.1f} kg CO2 / jam')
@@ -1178,6 +1217,7 @@ elif active_page == 'Manfaat & Prediksi Filter RUL':
             dcs_temp_intake,
             dcs_set_point_load,
             act_vigv=dcs_act_vigv,
+            rh_percent=dcs_rh_pct,
             rho_moist=rho_live_dcs,
             mode_simulasi=False,
             base_saving_rate=base_saving_rate,
@@ -1188,7 +1228,7 @@ elif active_page == 'Manfaat & Prediksi Filter RUL':
         dcs_pamb_bar = dcs_pamb_mbar / 1000.0
 
         # KALIBRASI BASELINE PCD UNTUK TROPIS EKSTREM (HINGGA 37°C) & POST-MI
-        vigv_optimal_ref = get_ideal_vigv_lookup_table(dcs_set_point_load, dcs_temp_intake)
+        vigv_optimal_ref = get_ideal_vigv_with_rh(dcs_set_point_load, dcs_temp_intake, dcs_rh_pct)
         vigv_ratio_corr = np.clip(dcs_act_vigv / vigv_optimal_ref, 0.7, 1.0) if vigv_optimal_ref > 0 else 1.0
 
         temp_corr_pcd = 1.0 - ((dcs_temp_intake - 15.0) * 0.0038) if dcs_temp_intake > 15.0 else 1.0
