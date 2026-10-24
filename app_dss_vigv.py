@@ -7,6 +7,14 @@ from plotly.subplots import make_subplots
 from prophet import Prophet
 import requests
 import datetime
+
+# Import pytz dengan fallback ke datetime.timezone (zona waktu WIB / UTC+7)
+try:
+    import pytz
+    wib_tz = pytz.timezone('Asia/Jakarta')
+except ImportError:
+    wib_tz = datetime.timezone(datetime.timedelta(hours=7))
+
 import streamlit as st
 
 # ==============================================================================
@@ -701,6 +709,15 @@ def create_performance_map(load_mw, pcd_bar, target_vigv, pamb_bar=1.013):
 # HALAMAN 1: LIVE WEATHER & PREDIKSI SHIFT
 # ------------------------------------------------------------------------------
 if active_page == 'Live Weather & Prediksi Shift':
+    # --- TERLETAK DI LOKASI 1: SET ZONA WAKTU & FORMAT WAKTU DINAMIS ---
+    now_wib = datetime.datetime.now(wib_tz)
+    formatted_date = now_wib.strftime('%A, %d %B %Y')
+    formatted_time = now_wib.strftime('%H:%M:%S WIB')
+
+    st.title('🌤️ Live Weather & Prediksi Shift GT13E1')
+    st.caption(f'📅 **Tanggal:** {formatted_date} | ⏰ **Waktu Server/Aktual:** {formatted_time}')
+    st.markdown('---')
+
     st.subheader('Telemetri Stasiun Cuaca Real-Time & Prediksi VIGV Shift')
 
     st.markdown('<div class="weather-card">', unsafe_allow_html=True)
