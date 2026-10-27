@@ -1334,12 +1334,13 @@ elif active_page == 'Live Verification & DCS Interlock':
   )
 
   with col_d3:
-    # --- RENDERING NOTIFIKASI THRESHOLD DILAKUKAN DI DALAM KOLOM KANAN ---
+    card_style = 'card-safe' if trim_dcs >= 0 else 'card-warn'
+    st.markdown(f'<div class="{card_style}">', unsafe_allow_html=True)
+
+    # --- SELIPKAN BANNER ALERT DI SINI (DI DALAM CONTAINER KARTU) ---
     if thresh_alert['active']:
       st.success(f"### {thresh_alert['title']}\n{thresh_alert['message']}")
 
-    card_style = 'card-safe' if trim_dcs >= 0 else 'card-warn'
-    st.markdown(f'<div class="{card_style}">', unsafe_allow_html=True)
     st.markdown('**REKOMENDASI INPUT HMI DCS:**')
 
     if dcs_set_point_load <= 0 or dcs_pamb_mbar <= 0 or dcs_temp_intake <= 0:
