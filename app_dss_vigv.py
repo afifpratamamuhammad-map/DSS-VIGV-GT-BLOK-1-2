@@ -658,12 +658,8 @@ if use_live_api and api_available:
   input_rh_amb = live_rh
   input_pamb_mbar = live_press
 
-  if (
-      'auto_rh_synced' not in st.session_state
-      or st.session_state.auto_rh_synced != float(live_rh)
-  ):
-    st.session_state.dcs_rh_pct = float(live_rh)
-    st.session_state.auto_rh_synced = float(live_rh)
+  # Sinkronisasi nilai RH ke DCS Session State secara konsisten
+  st.session_state.dcs_rh_pct = float(live_rh)
 else:
   if not api_available and use_live_api:
     st.sidebar.warning(
@@ -1712,7 +1708,7 @@ elif active_page == 'Manfaat & Prediksi Filter RUL':
       if virtual_dp_filter_bar >= dp_replace_limit_bar:
         st.error(
             'CRITICAL REPLACE! Estimated DP >= 0,019 bar'
-            f' ({virtual_dp_mbar:.1f} mbar). Filter kotor, jadwatchkan'
+            f' ({virtual_dp_mbar:.1f} mbar). Filter kotor, jadwalkan'
             ' penggantian segera!'
         )
       elif virtual_dp_filter_bar >= dp_warning_limit_bar:
