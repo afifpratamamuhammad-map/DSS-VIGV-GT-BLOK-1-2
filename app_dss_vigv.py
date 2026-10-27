@@ -1332,10 +1332,12 @@ elif active_page == 'Live Verification & DCS Interlock':
   thresh_alert = check_threshold_alerts(
       fuel_mode, delta_sfc_pct_val, f_sav_live
   )
-  if thresh_alert['active']:
-    st.success(f"### {thresh_alert['title']}\n{thresh_alert['message']}")
 
   with col_d3:
+    # --- RENDERING NOTIFIKASI THRESHOLD DILAKUKAN DI DALAM KOLOM KANAN ---
+    if thresh_alert['active']:
+      st.success(f"### {thresh_alert['title']}\n{thresh_alert['message']}")
+
     card_style = 'card-safe' if trim_dcs >= 0 else 'card-warn'
     st.markdown(f'<div class="{card_style}">', unsafe_allow_html=True)
     st.markdown('**REKOMENDASI INPUT HMI DCS:**')
