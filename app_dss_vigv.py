@@ -259,15 +259,15 @@ def check_scheduled_notifications(current_time_wib):
 def check_threshold_alerts(fuel_type, delta_sfc_pct, fuel_savings_val):
   """Pemicu Ambang Batas Signifikan Multi-Fuel (Gas Alam vs HSD)."""
   if fuel_type == "HSD (High Speed Diesel / Solar)":
-    # Threshold HSD: Delta SFC >= 1.0% ATAU Hemat HSD >= 0.30 cbm/h (300 L/jam)
-    is_significant = (delta_sfc_pct >= 1.0) or (fuel_savings_val >= 0.30)
+    # Threshold HSD: Delta SFC >= 1.0% ATAU Hemat HSD >= 0.10 cbm/h (100 L/jam)
+    is_significant = (delta_sfc_pct >= 1.0) or (fuel_savings_val >= 0.10)
     savings_str = (
         f"{fuel_savings_val * 1000:.0f} Liter/jam ({fuel_savings_val:.2f}"
         " cbm/h)"
     )
   else:
-    # Threshold Gas Alam: Delta SFC >= 1.0% ATAU Hemat Gas >= 0.30 kscm/h
-    is_significant = (delta_sfc_pct >= 1.0) or (fuel_savings_val >= 0.30)
+    # Threshold Gas Alam: Delta SFC >= 1.0% ATAU Hemat Gas >= 0.10 kscm/h
+    is_significant = (delta_sfc_pct >= 1.0) or (fuel_savings_val >= 0.10)
     savings_str = f"{fuel_savings_val:.2f} kscm/h"
 
   if is_significant:
@@ -1315,19 +1315,15 @@ elif active_page == 'Live Verification & DCS Interlock':
   pred_tit_after = dcs_tit - tit_drop_pred
 
   # 4. Evaluasi Threshold Alert Penghematan Signifikan (Gas Alam vs HSD)
-  sfc_baseline_val = (
-      (dcs_fuel_cons / dcs_set_point_load) if dcs_set_point_load > 0 else 0.0
-  )
-  sfc_predicted_val = (
-      ((dcs_fuel_cons - f_sav_live) / dcs_set_point_load)
-      if dcs_set_point_load > 0
-      else 0.0
-  )
-  delta_sfc_pct_val = (
-      (((sfc_baseline_val - sfc_predicted_val) / sfc_baseline_val) * 100.0)
-      if sfc_baseline_val > 0
-      else 0.0
-  )
+  if dcs_fuel_cons > 0 and dcs_set_point_load > 0:
+    sfc_baseline_val = dcs_fuel_cons / dcs_set_point_load
+    sfc_predicted_val = (dcs_fuel_cons - f_sav_live) / dcs_set_point_load
+    delta_sfc_pct_val = (
+        (sfc_baseline_val - sfc_predicted_val) / sfc_baseline_val
+    ) * 100.0
+  else:
+    # Fallback estimasi persentase penghematan jika konsumsi BBM belum diisi
+    delta_sfc_pct_val = (abs(trim_dcs) / 2.0) * 1.25
 
   thresh_alert = check_threshold_alerts(
       fuel_mode, delta_sfc_pct_val, f_sav_live
@@ -1338,7 +1334,7 @@ elif active_page == 'Live Verification & DCS Interlock':
     st.markdown(f'<div class="{card_style}">', unsafe_allow_html=True)
 
     # --- SELIPKAN BANNER ALERT DI SINI (DI DALAM CONTAINER KARTU) ---
-    if thresh_alert['active']:
+    if thresh_alert['active'] and dcs_set_point_load > 0:
       st.success(f"### {thresh_alert['title']}\n{thresh_alert['message']}")
 
     st.markdown('**REKOMENDASI INPUT HMI DCS:**')
